@@ -1,0 +1,27 @@
+# Env- und Secret-Dateien
+.env
+.env.*.local
+
+# Backend-Secrets
+fake-news-detection-api/credentials.py
+fake-news-detection-api/fake-news-detection-fc45a-6b57b97fcee3.json
+
+# Logs
+*.log
+
+# Python (Backend)
+__pycache__/
+*.py[cod]
+venv/
+env/
+
+# Node.js / React (Frontend)
+node_modules/
+build/
+
+# Docker-Compose Overrides
+docker-compose.override.yml
+
+# IDEs / OS
+.vscode/
+.DS_Store

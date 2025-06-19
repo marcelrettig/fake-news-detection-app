@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  api:
+    build:
+      context: ./fake-news-detection-api
+      dockerfile: Dockerfile
+    image: ghcr.io/your-org/fake-news-detection-api:latest
+    container_name: fake-news-detection-api
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+
+  ui:
+    build:
+      context: ./fake-news-detection-ui
+      dockerfile: Dockerfile
+    image: ghcr.io/your-org/fake-news-detection-ui:latest
+    container_name: fake-news-detection-ui
+    ports:
+      - "3000:80"
+    env_file:
+      - .env
+
+networks:
+  default:
+    driver: bridge

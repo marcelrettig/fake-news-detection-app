@@ -1,0 +1,59 @@
+name: 🚀 Deploy Production
+
+on:
+  push:
+    branches:
+      - production
+
+env:
+  API_IMAGE: ghcr.io/your-org/fake-news-detection-api
+  UI_IMAGE:  ghcr.io/your-org/fake-news-detection-ui
+  TAG:       ${{ github.sha }}
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GHCR_TOKEN }}
+
+      - name: Build & push API image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./fake-news-detection-api
+          file: ./fake-news-detection-api/Dockerfile
+          push: true
+          tags: ${{ env.API_IMAGE }}:${{ env.TAG }}
+
+      - name: Build & push UI image
+        uses: docker/build-push-action@v4
+        with:
+          context: ./fake-news-detection-ui
+          file: ./fake-news-detection-ui/Dockerfile
+          push: true
+          tags: ${{ env.UI_IMAGE }}:${{ env.TAG }}
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v0.1.6
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: deployer
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: 22
+          script: |
+            cd /home/deployer/fake-news-detection-app
+            git pull origin production
+            docker-compose pull
+            docker-compose up -d --remove-orphans
+            docker image prune -f
