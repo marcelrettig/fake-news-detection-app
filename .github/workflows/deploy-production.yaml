@@ -6,8 +6,8 @@ on:
       - production
 
 env:
-  API_IMAGE: ghcr.io/your-org/fake-news-detection-api
-  UI_IMAGE:  ghcr.io/your-org/fake-news-detection-ui
+  API_IMAGE: ghcr.io/marcelrettig/fake-news-detection-api
+  UI_IMAGE:  ghcr.io/marcelrettig/fake-news-detection-ui
   TAG:       ${{ github.sha }}
 
 jobs:
