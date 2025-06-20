@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { auth } from '../firebase';                   // your Firebase init
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   Container,
   Box,
@@ -23,6 +25,7 @@ import {
 } from '@mui/material';
 
 const Benchmark = () => {
+  // form state
   const [csvFile, setCsvFile] = useState(null);
   const [useExternalInfo, setUseExternalInfo] = useState(true);
   const [promptVariant, setPromptVariant] = useState('default');
@@ -31,20 +34,47 @@ const Benchmark = () => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // New: saved runs
+  // auth state
+  const [token, setToken] = useState('');
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // saved runs state
   const [savedRuns, setSavedRuns] = useState([]);
   const [selectedRunId, setSelectedRunId] = useState('');
   const [loadingSaved, setLoadingSaved] = useState(false);
 
   const navigate = useNavigate();
 
-  // fetch saved benchmarks on mount
+  // listen for Firebase auth state
   useEffect(() => {
-    fetch('http://localhost:8000/benchmarks')
-      .then(res => res.json())
-      .then(data => setSavedRuns(data))
-      .catch(err => console.error('Failed to load saved benchmarks', err));
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const tk = await user.getIdToken(true);
+        setToken(tk);
+      } else {
+        setToken('');
+      }
+      setAuthChecked(true);
+    });
+    return () => unsubscribe();
   }, []);
+
+  // fetch saved benchmarks once we have a token
+  useEffect(() => {
+    if (!token) return;
+    (async () => {
+      try {
+        const res = await fetch('http://localhost:8000/benchmarks', {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (!res.ok) throw new Error(res.statusText);
+        const data = await res.json();
+        setSavedRuns(data);
+      } catch (err) {
+        console.error('Failed to load saved benchmarks', err);
+      }
+    })();
+  }, [token]);
 
   const toBinaryLabel = v => (v ? 'True' : 'False');
 
@@ -54,7 +84,7 @@ const Benchmark = () => {
 
   const handleSubmit = async e => {
     e.preventDefault();
-    if (!csvFile) return;
+    if (!csvFile || !token) return;
     setLoading(true);
     setResult(null);
 
@@ -68,8 +98,10 @@ const Benchmark = () => {
     try {
       const response = await fetch('http://localhost:8000/benchmark', {
         method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
       });
+      if (!response.ok) throw new Error(response.statusText);
       const data = await response.json();
       setResult(data);
     } catch (error) {
@@ -80,14 +112,16 @@ const Benchmark = () => {
     }
   };
 
-  // New: load saved benchmark
   const handleLoadSaved = async () => {
-    if (!selectedRunId) return;
+    if (!selectedRunId || !token) return;
     setLoadingSaved(true);
     try {
-      const res = await fetch(`http://localhost:8000/benchmark/${selectedRunId}`);
+      const res = await fetch(
+        `http://localhost:8000/benchmark/${selectedRunId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
-      // navigate to Metrics page
       navigate('/metrics', { state: { metrics: data } });
     } catch (err) {
       console.error('Failed to load saved benchmark', err);
@@ -126,9 +160,7 @@ const Benchmark = () => {
             <List dense>
               {result.results.map((r, idx) => {
                 const preds = Array.isArray(r.predictions) ? r.predictions : [];
-                const corrects = Array.isArray(r.correctness)
-                  ? r.correctness
-                  : [];
+                const corrects = Array.isArray(r.correctness) ? r.correctness : [];
 
                 return (
                   <ListItem key={idx} alignItems="flex-start">
@@ -173,6 +205,31 @@ const Benchmark = () => {
     );
   };
 
+  // if auth check not done yet
+  if (!authChecked) {
+    return (
+      <Container>
+        <Box textAlign="center" mt={10}>
+          <CircularProgress />
+          <Typography>Checking authentication…</Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  // if not signed in
+  if (!token) {
+    return (
+      <Container>
+        <Box textAlign="center" mt={10}>
+          <Typography color="error">
+            You must be signed in to access this page.
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
   return (
     <Container maxWidth="sm">
       <Box my={4}>
@@ -180,28 +237,27 @@ const Benchmark = () => {
           Benchmark Fake‐News Classifier
         </Typography>
 
-        {/* New: Load saved benchmarks */}
+        {/* Load saved benchmarks */}
         <Paper elevation={1} sx={{ p: 2, mb: 4 }}>
           <Typography variant="subtitle1">Load Saved Benchmark</Typography>
           <Box display="flex" gap={2} alignItems="center" mt={1}>
-          <FormControl fullWidth size="small">
-            <InputLabel id="saved-run-label">Select Run</InputLabel>
-            <Select
+            <FormControl fullWidth size="small">
+              <InputLabel id="saved-run-label">Select Run</InputLabel>
+              <Select
                 labelId="saved-run-label"
                 value={selectedRunId}
                 label="Select Run"
                 onChange={e => setSelectedRunId(e.target.value)}
-            >
+              >
                 {savedRuns.map(run => (
-                <MenuItem key={run.id} value={run.id}>
+                  <MenuItem key={run.id} value={run.id}>
                     {run.timestamp
-                    // run.timestamp is already a string or number
-                    ? new Date(run.timestamp).toLocaleString()
-                    : run.id}
-                    {' '} (ID: {run.id})
-                </MenuItem>
+                      ? new Date(run.timestamp).toLocaleString()
+                      : run.id}{' '}
+                    (ID: {run.id})
+                  </MenuItem>
                 ))}
-            </Select>
+              </Select>
             </FormControl>
             <Button
               variant="outlined"
@@ -213,9 +269,9 @@ const Benchmark = () => {
           </Box>
         </Paper>
 
+        {/* Benchmark form */}
         <Paper elevation={3} sx={{ p: 3, mb: 4 }}>
           <form onSubmit={handleSubmit}>
-            {/* existing CSV upload & controls */}
             <FormControl fullWidth margin="normal">
               <input
                 accept=".csv"
@@ -281,7 +337,7 @@ const Benchmark = () => {
               type="submit"
               variant="contained"
               color="primary"
-              disabled={loading || !csvFile}
+              disabled={loading}
               fullWidth
             >
               {loading ? 'Benchmarking...' : 'Run Benchmark'}

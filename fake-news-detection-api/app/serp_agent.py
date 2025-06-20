@@ -2,24 +2,26 @@ import os
 from crewai import Agent, Task, Crew, Process
 from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI
-import credentials
+
+serp_key = os.getenv("SERP_API_KEY")
+if not serp_key:
+    raise RuntimeError("Missing SERPER_API_KEY environment variable")
 
 # Initialize the search tool with the SERP API key
-search_tool = SerperDevTool(api_key=credentials.SERP_API_KEY)
+search_tool = SerperDevTool(api_key=serp_key)
 
 class SerpAgent:
     def __init__(self):
-        os.environ["OPENAI_API_KEY"] = credentials.OPENAI_API_KEY
-        os.environ['SERPER_API_KEY'] = credentials.SERP_API_KEY
+        openai_key = os.getenv("OPENAI_API_KEY")
         self.research_llm = ChatOpenAI(
             model_name="gpt-4o",
             temperature=0.3,
-            api_key=credentials.OPENAI_API_KEY
+            api_key=openai_key
         )
         self.writer_llm = ChatOpenAI(
             model_name="gpt-4o",
             temperature=0.5,
-            api_key=credentials.OPENAI_API_KEY
+            api_key=openai_key
         )
 
     def search_news(self, query: str, post: str,) -> str:

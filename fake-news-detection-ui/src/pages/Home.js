@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { auth } from '../firebase';                      // your Firebase init
+import { onAuthStateChanged } from 'firebase/auth';
 import {
   Container,
   Box,
@@ -17,10 +19,12 @@ import {
   Divider,
   List,
   ListItem,
-  ListItemText
+  ListItemText,
+  CircularProgress
 } from '@mui/material';
 
 const Home = () => {
+  // form state
   const [postText, setPostText] = useState('');
   const [useExternalInfo, setUseExternalInfo] = useState(true);
   const [promptVariant, setPromptVariant] = useState('default');
@@ -29,8 +33,27 @@ const Home = () => {
   const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
+  // auth state
+  const [token, setToken] = useState('');
+  const [authChecked, setAuthChecked] = useState(false);
+
+  // listen for Firebase auth state
+  useEffect(() => {
+    const unsub = onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        const tk = await user.getIdToken(true);
+        setToken(tk);
+      } else {
+        setToken('');
+      }
+      setAuthChecked(true);
+    });
+    return () => unsub();
+  }, []);
+
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!postText.trim() || !token) return;
     setLoading(true);
     setResult(null);
 
@@ -45,22 +68,25 @@ const Home = () => {
     try {
       const response = await fetch('http://localhost:8000/classify', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
         body: JSON.stringify(payload)
       });
+      if (!response.ok) throw new Error(response.statusText);
       const data = await response.json();
       setResult(data);
     } catch (error) {
       console.error('Error:', error);
       setResult({ error: 'An error occurred while classifying the post.' });
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   const renderResponses = () => {
     if (!result) return null;
-    // if multiple responses array
     const responses = Array.isArray(result.responses)
       ? result.responses
       : [result.truthfulness];
@@ -71,7 +97,11 @@ const Home = () => {
           <ListItem key={idx} alignItems="flex-start">
             <ListItemText
               primary={<Typography variant="body2"><strong>Run {idx + 1}:</strong></Typography>}
-              secondary={<Typography component="pre" variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>{resp}</Typography>}
+              secondary={
+                <Typography component="pre" variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+                  {resp}
+                </Typography>
+              }
             />
           </ListItem>
         ))}
@@ -79,6 +109,32 @@ const Home = () => {
     );
   };
 
+  // Show loading while we wait for auth
+  if (!authChecked) {
+    return (
+      <Container>
+        <Box textAlign="center" mt={10}>
+          <CircularProgress />
+          <Typography>Checking authentication…</Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  // If not signed in, block access
+  if (!token) {
+    return (
+      <Container>
+        <Box textAlign="center" mt={10}>
+          <Typography color="error">
+            You must be signed in to access this page.
+          </Typography>
+        </Box>
+      </Container>
+    );
+  }
+
+  // Authenticated UI
   return (
     <Container maxWidth="sm">
       <Box my={4}>
@@ -139,7 +195,9 @@ const Home = () => {
                 type="number"
                 InputProps={{ inputProps: { min: 1 } }}
                 value={iterations}
-                onChange={(e) => setIterations(Math.max(1, parseInt(e.target.value) || 1))}
+                onChange={(e) =>
+                  setIterations(Math.max(1, parseInt(e.target.value) || 1))
+                }
                 size="small"
                 sx={{ width: 100 }}
               />
@@ -149,7 +207,7 @@ const Home = () => {
               type="submit"
               variant="contained"
               color="primary"
-              disabled={loading || !postText.trim()}
+              disabled={loading}
               fullWidth
             >
               {loading ? 'Classifying...' : 'Classify'}

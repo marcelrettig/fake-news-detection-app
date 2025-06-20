@@ -1,7 +1,7 @@
 from openai import OpenAI
-from credentials import OPENAI_API_KEY
 from typing import List, Dict
 import logging
+import os
 
 # configure a logger for this module
 logger = logging.getLogger(__name__)
@@ -12,7 +12,8 @@ logger.addHandler(handler)
 
 class LLMManager:
     def __init__(self):
-        self.client = OpenAI(api_key=OPENAI_API_KEY)
+        key = os.getenv("OPENAI_API_KEY")
+        self.client = OpenAI(api_key=key)
         logger.info("LLMManager initialized with OpenAI client")
 
 

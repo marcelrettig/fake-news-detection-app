@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Depends
+from app.deps import get_current_user
 import pandas as pd
 import numpy as np
 from pydantic import BaseModel, Field
@@ -8,14 +9,19 @@ from app.serp_agent import SerpAgent
 import json
 import re
 import logging
+import os
 
 
 # Firebase Admin SDK
 import firebase_admin
 from firebase_admin import credentials, firestore
 
+SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_CRED_PATH")
+if not SERVICE_ACCOUNT_PATH:
+    raise RuntimeError("Missing FIREBASE_CRED_PATH environment variable")
+
 # Use a service account.
-cred = credentials.Certificate(FIREBASE_CRED_PATH)
+cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
 app = firebase_admin.initialize_app(cred)
 db = firestore.client()
 
@@ -34,7 +40,7 @@ class PostData(BaseModel):
     output_type: str = "score"
     iterations: int = Field(1, ge=1)
 
-@router.post("/classify")
+@router.post("/classify", dependencies=[Depends(get_current_user)])
 async def classify_post(data: PostData):
     if not data.post.strip():
         raise HTTPException(400, "Post must not be empty")
@@ -107,7 +113,7 @@ async def classify_post(data: PostData):
     }
 
 
-@router.post("/benchmark")
+@router.post("/benchmark", dependencies=[Depends(get_current_user)])
 async def benchmark_csv(
     file: UploadFile = File(...),
     use_external_info: bool = Form(True),
@@ -288,7 +294,7 @@ async def benchmark_csv(
     }
 
 
-@router.get("/benchmarks")
+@router.get("/benchmarks", dependencies=[Depends(get_current_user)])
 async def list_benchmarks(limit: int = 20):
     col   = db.collection("benchmarks")
     query = col.order_by("timestamp", direction=firestore.Query.DESCENDING).limit(limit)
@@ -312,7 +318,7 @@ async def list_benchmarks(limit: int = 20):
         })
     return items
 
-@router.get("/benchmark/{benchmark_id}")
+@router.get("/benchmark/{benchmark_id}", dependencies=[Depends(get_current_user)])
 async def get_benchmark(benchmark_id: str):
     doc_ref = db.collection("benchmarks").document(benchmark_id)
     snap = doc_ref.get()

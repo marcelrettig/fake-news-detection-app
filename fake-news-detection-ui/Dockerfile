@@ -1,10 +1,24 @@
 # Stage 1: Build
 FROM node:18-alpine AS build
 WORKDIR /usr/src/app
-COPY package.json yarn.lock ./
-RUN yarn install --frozen-lockfile
+
+ARG REACT_APP_FIREBASE_API_KEY
+ARG REACT_APP_FIREBASE_AUTH_DOMAIN
+ARG REACT_APP_FIREBASE_PROJECT_ID
+
+# expose them as env for CRA
+ENV REACT_APP_FIREBASE_API_KEY=${REACT_APP_FIREBASE_API_KEY}
+ENV REACT_APP_FIREBASE_AUTH_DOMAIN=${REACT_APP_FIREBASE_AUTH_DOMAIN}
+ENV REACT_APP_FIREBASE_PROJECT_ID=${REACT_APP_FIREBASE_PROJECT_ID}
+
+# statt yarn.lock kopieren wir package-lock.json
+COPY package.json package-lock.json ./
+
+# Installieren per npm
+RUN npm ci
+
 COPY . .
-RUN yarn build
+RUN npm run build
 
 # Stage 2: Nginx-Server
 FROM nginx:stable-alpine

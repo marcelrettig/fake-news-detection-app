@@ -1,9 +1,10 @@
 # Env- und Secret-Dateien
 .env
 .env.*.local
+*secrets/
 
 # Backend-Secrets
-fake-news-detection-api/credentials.py
+fake-news-detection-api/app/credentials.py
 fake-news-detection-api/fake-news-detection-fc45a-6b57b97fcee3.json
 
 # Logs
