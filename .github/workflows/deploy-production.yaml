@@ -52,8 +52,9 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            cd /opt/webapps/fake-news-detection-app/
+            cd /opt/webapps/fake-news-detection-app
+            git config --global --add safe.directory /opt/webapps/fake-news-detection-app
             git pull origin production
-            docker-compose pull
-            docker-compose up -d --remove-orphans
+            docker compose pull
+            docker compose up -d --remove-orphans
             docker image prune -f
