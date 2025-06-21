@@ -52,7 +52,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: 22
           script: |
-            cd /opt/fake-news-detection-app
+            cd /opt/webapps/fake-news-detection-app/
             git pull origin production
             docker-compose pull
             docker-compose up -d --remove-orphans
