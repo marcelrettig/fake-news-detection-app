@@ -56,7 +56,8 @@ jobs:
             GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
           script: |
             echo "$GHCR_TOKEN" | docker login ghcr.io \
-              -u "$GHCR_USERNAME" --password-stdin
+            --username "$GHCR_USERNAME" --password-stdin
+
 
             cd /opt/webapps/fake-news-detection-app
             git config --global --add safe.directory /opt/webapps/fake-news-detection-app
