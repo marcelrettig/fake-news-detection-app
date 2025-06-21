@@ -1,0 +1,24 @@
+version: "3.8"
+
+services:
+  api:
+    image: ${API_IMAGE}:${TAG}
+    container_name: fake-news-detection-api
+    volumes:
+      - ./secrets:/app/secrets:ro
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+
+  ui:
+    image: ${UI_IMAGE}:${TAG}
+    container_name: fake-news-detection-ui
+    env_file:
+      - .env
+    ports:
+      - "3000:80"
+
+networks:
+  default:
+    driver: bridge
