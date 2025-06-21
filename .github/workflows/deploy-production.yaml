@@ -47,14 +47,22 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v0.1.6
         with:
-          host: ${{ secrets.SSH_HOST }}
-          username: deployer
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          port: 22
-          script: |
-            cd /opt/webapps/fake-news-detection-app
-            git config --global --add safe.directory /opt/webapps/fake-news-detection-app
-            git pull origin production
-            docker compose pull
-            docker compose up -d --remove-orphans
-            docker image prune -f
+          host:      ${{ secrets.SSH_HOST }}
+          username:  deployer
+          key:       ${{ secrets.SSH_PRIVATE_KEY }}
+          port:      22
+          envs: |
+            GHCR_USERNAME=${{ github.actor }}
+            GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
+        script: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io \
+            -u "$GHCR_USERNAME" --password-stdin
+
+          cd /opt/webapps/fake-news-detection-app
+          git config --global --add safe.directory /opt/webapps/fake-news-detection-app
+          git pull origin production
+
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d --remove-orphans
+
+          docker image prune -f
