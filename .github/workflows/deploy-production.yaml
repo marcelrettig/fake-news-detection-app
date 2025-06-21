@@ -51,19 +51,23 @@ jobs:
           username:  deployer
           key:       ${{ secrets.SSH_PRIVATE_KEY }}
           port:      22
-          envs: |
+          strictHostKeyChecking: false
+          env: |
             GHCR_USERNAME=${{ github.actor }}
             GHCR_TOKEN=${{ secrets.GHCR_TOKEN }}
           script: |
+            # 1) Login to GHCR
             echo "$GHCR_TOKEN" | docker login ghcr.io \
-            --username "$GHCR_USERNAME" --password-stdin
+              --username "$GHCR_USERNAME" --password-stdin
 
-
+            # 2) Update code
             cd /opt/webapps/fake-news-detection-app
-            git config --global --add safe.directory /opt/webapps/fake-news-detection-app
+            git config --global --add safe.directory $(pwd)
             git pull origin production
 
+            # 3) Pull & run
             docker compose -f docker-compose.prod.yml pull
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
+            # 4) Cleanup
             docker image prune -f
