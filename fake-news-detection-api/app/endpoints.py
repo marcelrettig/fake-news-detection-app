@@ -258,6 +258,13 @@ async def benchmark_csv(
         "correct_predictions":correct_preds,
     }
 
+    model_params = {
+        "extract_model":  llm.extract_model,
+        "classify_model": llm.classify_model,
+        "research_model": serp.research_model,
+        "summary_model":  serp.summary_model,
+    }
+
     # (4) save to Firestore
     try:
         doc = db.collection("benchmarks").document()
@@ -268,6 +275,7 @@ async def benchmark_csv(
                 "prompt_variant": prompt_variant,
                 "output_type": output_type,
                 "iterations": iterations,
+                **model_params
             },
             "metrics": summary_metrics,
         })
@@ -291,6 +299,7 @@ async def benchmark_csv(
         "external_info_used":  use_external_info,
         "output_type":         output_type,
         "iterations":          iterations,
+        **model_params
     }
 
 

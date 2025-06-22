@@ -5,9 +5,10 @@ services:
     build:
       context: ./fake-news-detection-api
       dockerfile: Dockerfile
+    image: fake-news-api:dev
     volumes:
+      - ./fake-news-detection-api/app:/app/app:ro
       - ./secrets:/app/secrets:ro
-    image: ghcr.io/marcelrettig/fake-news-detection-api:latest
     container_name: fake-news-detection-api
     ports:
       - "8000:8000"
@@ -22,7 +23,7 @@ services:
         REACT_APP_FIREBASE_API_KEY: ${REACT_APP_FIREBASE_API_KEY}
         REACT_APP_FIREBASE_AUTH_DOMAIN: ${REACT_APP_FIREBASE_AUTH_DOMAIN}
         REACT_APP_FIREBASE_PROJECT_ID: ${REACT_APP_FIREBASE_PROJECT_ID}
-    image: ghcr.io/marcelrettig/fake-news-detection-ui:latest
+    image: fake-news-ui:dev
     container_name: fake-news-detection-ui
     ports:
       - "3000:80"

@@ -13,13 +13,15 @@ search_tool = SerperDevTool(api_key=serp_key)
 class SerpAgent:
     def __init__(self):
         openai_key = os.getenv("OPENAI_API_KEY")
+        self.research_model = os.getenv("LLM_RESEARCH_MODEL", "gpt-4o")
+        self.summary_model  = os.getenv("LLM_SUMMARY_MODEL",  "gpt-4o")
         self.research_llm = ChatOpenAI(
-            model_name="gpt-4o",
+            model_name=self.research_model,
             temperature=0.3,
             api_key=openai_key
         )
         self.writer_llm = ChatOpenAI(
-            model_name="gpt-4o",
+            model_name=self.summary_model,
             temperature=0.5,
             api_key=openai_key
         )

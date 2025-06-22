@@ -14,13 +14,17 @@ class LLMManager:
     def __init__(self):
         key = os.getenv("OPENAI_API_KEY")
         self.client = OpenAI(api_key=key)
+
+        self.extract_model  = os.getenv("LLM_EXTRACT_MODEL",  "gpt-4o")
+        self.classify_model = os.getenv("LLM_CLASSIFY_MODEL", "gpt-4o")
+
         logger.info("LLMManager initialized with OpenAI client")
 
 
     def extract_google_search_query(self, text: str) -> str:
         logger.debug("Extracting search query for text: %r", text)
         resp = self.client.chat.completions.create(
-            model = "gpt-4o",
+            model = self.extract_model,
             messages = [
                 {"role": "system", "content": "You are a tweet-to-search-query converter."},
                 {"role": "user", "content": (
@@ -40,12 +44,9 @@ class LLMManager:
         return query
 
     def extract_search_terms(self, text: str) -> str:
-        """
-        Uses GPT-4o to extract the three most important words from the given text.
-        """
         logger.debug("Extracting search terms for text: %r", text)
         resp = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.extract_model,
             messages=[
                 {"role": "system", "content": "You are an AI that converts text into concise search terms."},
                 {"role": "user", "content": (
@@ -227,7 +228,7 @@ class LLMManager:
         """
 
         resp = self.client.chat.completions.create(
-            model="gpt-4o",
+            model=self.classify_model,
             messages=messages,
             max_tokens=max_tokens,
             temperature=0.3

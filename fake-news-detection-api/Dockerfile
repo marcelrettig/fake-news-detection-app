@@ -43,8 +43,6 @@ RUN apt-get update \
 ENV JAVA_HOME=/usr/lib/jvm/java-11-openjdk-amd64 \
     JDK_HOME=/usr/lib/jvm/java-11-openjdk-amd64
 
-WORKDIR /app
-
 # (6) Copy in the already-built site-packages & scripts
 COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
 COPY --from=builder /usr/local/bin               /usr/local/bin
