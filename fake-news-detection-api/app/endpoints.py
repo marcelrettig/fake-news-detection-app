@@ -93,6 +93,7 @@ def run_benchmark_job(
     prompt_variant: str,
     output_type: str,
     iterations: int,
+    job_id: str,
 ):
     # (1) load & clean CSV
     try:
@@ -252,7 +253,7 @@ def run_benchmark_job(
     }
     # (4) save to Firestore
     try:
-        doc = db.collection("benchmarks").document()
+        doc = db.collection("benchmarks").document(job_id)
         doc.set({
             "timestamp": firestore.SERVER_TIMESTAMP,
             "params": {
@@ -302,6 +303,7 @@ async def benchmark_csv(
         prompt_variant,
         output_type,
         iterations,
+        job_id,
     )
 
     return {

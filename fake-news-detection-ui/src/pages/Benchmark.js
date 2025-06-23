@@ -69,7 +69,7 @@ export default function Benchmark() {
     if (!token) return;
     (async () => {
       try {
-        const res = await fetch(`${API_BASE}/benchmark`, {
+        const res = await fetch(`${API_BASE}/benchmarks`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(res.statusText);
@@ -100,6 +100,13 @@ export default function Benchmark() {
             setJobId(null);
           }
         }
+        else if (res.status !== 404) {      // only bail on non-404 errors
+          clearInterval(pollRef.current);
+          setPolling(false);
+          setResult({ error: `Error ${res.status}: ${res.statusText}` });
+          setJobId(null);
+        }
+        // if 404: do nothing (still processing)
       } catch (err) {
         console.error('Polling error', err);
         clearInterval(pollRef.current);
