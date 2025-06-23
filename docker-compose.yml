@@ -23,6 +23,7 @@ services:
         REACT_APP_FIREBASE_API_KEY: ${REACT_APP_FIREBASE_API_KEY}
         REACT_APP_FIREBASE_AUTH_DOMAIN: ${REACT_APP_FIREBASE_AUTH_DOMAIN}
         REACT_APP_FIREBASE_PROJECT_ID: ${REACT_APP_FIREBASE_PROJECT_ID}
+        REACT_APP_API_BASE_URL: ${REACT_APP_API_BASE_URL}
     image: fake-news-ui:dev
     container_name: fake-news-detection-ui
     ports:
