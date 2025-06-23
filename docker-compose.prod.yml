@@ -1,23 +1,34 @@
-version: "3.8"
+version: '3.8'
 
 services:
   api:
-    image: ${API_IMAGE}:${TAG}
-    container_name: fake-news-detection-api
+    build:
+      context: ./fake-news-detection-api
+      dockerfile: Dockerfile
+    image: fake-news-api:dev
     volumes:
+      - ./fake-news-detection-api/app:/app/app:ro
       - ./secrets:/app/secrets:ro
-    env_file:
-      - .env
+    container_name: fake-news-detection-api
     ports:
       - "8000:8000"
+    env_file:
+      - .env.production
 
   ui:
-    image: ${UI_IMAGE}:${TAG}
+    build:
+      context: ./fake-news-detection-ui
+      dockerfile: Dockerfile
+      args:
+        REACT_APP_FIREBASE_API_KEY: ${REACT_APP_FIREBASE_API_KEY}
+        REACT_APP_FIREBASE_AUTH_DOMAIN: ${REACT_APP_FIREBASE_AUTH_DOMAIN}
+        REACT_APP_FIREBASE_PROJECT_ID: ${REACT_APP_FIREBASE_PROJECT_ID}
+    image: fake-news-ui:dev
     container_name: fake-news-detection-ui
-    env_file:
-      - .env
     ports:
       - "3000:80"
+    env_file:
+      - .env.production
 
 networks:
   default:

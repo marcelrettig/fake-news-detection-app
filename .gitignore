@@ -1,6 +1,7 @@
 # Env- und Secret-Dateien
 .env
 .env.*.local
+.env.production
 *secrets/
 
 # Backend-Secrets

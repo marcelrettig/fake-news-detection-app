@@ -47,6 +47,9 @@ export default function Benchmark() {
 
   const navigate = useNavigate();
 
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || '';
+
+
   // listen for Firebase auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
@@ -66,7 +69,7 @@ export default function Benchmark() {
     if (!token) return;
     (async () => {
       try {
-        const res = await fetch('http://localhost:8000/benchmarks', {
+        const res = await fetch(`${API_BASE}:8000/benchmark`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(res.statusText);
@@ -85,7 +88,7 @@ export default function Benchmark() {
 
     pollRef.current = setInterval(async () => {
       try {
-        const res = await fetch(`http://localhost:8000/benchmark/${jobId}`, {
+        const res = await fetch(`${API_BASE}:8000/benchmark/${jobId}`, {
           headers: { 'Authorization': `Bearer ${token}` },
         });
         if (res.ok) {
@@ -130,7 +133,7 @@ export default function Benchmark() {
     formData.append('iterations', String(iterations));
 
     try {
-      const res = await fetch('http://localhost:8000/benchmark', {
+      const res = await fetch(`${API_BASE}:8000/benchmark`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
@@ -149,7 +152,7 @@ export default function Benchmark() {
     setLoadingSaved(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/benchmark/${selectedRunId}`,
+        `${API_BASE}:8000/benchmark/${selectedRunId}`,
         { headers: { 'Authorization': `Bearer ${token}` } }
       );
       if (!res.ok) throw new Error(res.statusText);
