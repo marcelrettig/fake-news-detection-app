@@ -37,6 +37,8 @@ const Home = () => {
   const [token, setToken] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
 
+  const API_BASE = process.env.REACT_APP_API_BASE_URL || '';
+
   // listen for Firebase auth state
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
@@ -66,7 +68,7 @@ const Home = () => {
     };
 
     try {
-      const response = await fetch('http://localhost:8000/classify', {
+      const response = await fetch(`${API_BASE}:8000/classify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
