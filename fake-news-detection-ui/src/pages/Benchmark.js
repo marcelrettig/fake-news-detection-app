@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { auth } from '../firebase';                   // your Firebase init
 import { onAuthStateChanged } from 'firebase/auth';
@@ -8,8 +8,6 @@ import {
   Typography,
   Paper,
   Button,
-  Card,
-  CardContent,
   FormControl,
   InputLabel,
   Select,
@@ -24,19 +22,23 @@ import {
   CircularProgress
 } from '@mui/material';
 
-const Benchmark = () => {
+export default function Benchmark() {
   // form state
   const [csvFile, setCsvFile] = useState(null);
   const [useExternalInfo, setUseExternalInfo] = useState(true);
   const [promptVariant, setPromptVariant] = useState('default');
   const [outputType, setOutputType] = useState('score');
   const [iterations, setIterations] = useState(1);
-  const [result, setResult] = useState(null);
-  const [loading, setLoading] = useState(false);
 
   // auth state
   const [token, setToken] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
+
+  // job & polling state
+  const [jobId, setJobId] = useState(null);
+  const [polling, setPolling] = useState(false);
+  const [result, setResult] = useState(null);
+  const pollRef = useRef(null);
 
   // saved runs state
   const [savedRuns, setSavedRuns] = useState([]);
@@ -47,7 +49,7 @@ const Benchmark = () => {
 
   // listen for Firebase auth state
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+    const unsubscribe = onAuthStateChanged(auth, async user => {
       if (user) {
         const tk = await user.getIdToken(true);
         setToken(tk);
@@ -76,6 +78,36 @@ const Benchmark = () => {
     })();
   }, [token]);
 
+  // poll for job results
+  useEffect(() => {
+    if (!jobId) return;
+    setPolling(true);
+
+    pollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(`http://localhost:8000/benchmark/${jobId}`, {
+          headers: { 'Authorization': `Bearer ${token}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.accuracy !== undefined) {
+            clearInterval(pollRef.current);
+            setResult(data);
+            setPolling(false);
+            setJobId(null);
+          }
+        }
+      } catch (err) {
+        console.error('Polling error', err);
+        clearInterval(pollRef.current);
+        setPolling(false);
+        setJobId(null);
+      }
+    }, 3000);
+
+    return () => clearInterval(pollRef.current);
+  }, [jobId, token]);
+
   const toBinaryLabel = v => (v ? 'True' : 'False');
 
   const handleFileChange = e => {
@@ -85,30 +117,30 @@ const Benchmark = () => {
   const handleSubmit = async e => {
     e.preventDefault();
     if (!csvFile || !token) return;
-    setLoading(true);
+
+    // reset previous
     setResult(null);
+    setJobId(null);
 
     const formData = new FormData();
     formData.append('file', csvFile);
-    formData.append('use_external_info', useExternalInfo);
+    formData.append('use_external_info', String(useExternalInfo));
     formData.append('prompt_variant', promptVariant);
     formData.append('output_type', outputType);
-    formData.append('iterations', iterations);
+    formData.append('iterations', String(iterations));
 
     try {
-      const response = await fetch('http://localhost:8000/benchmark', {
+      const res = await fetch('http://localhost:8000/benchmark', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData,
       });
-      if (!response.ok) throw new Error(response.statusText);
-      const data = await response.json();
-      setResult(data);
-    } catch (error) {
-      console.error('Error:', error);
-      setResult({ error: 'An error occurred during benchmarking.' });
-    } finally {
-      setLoading(false);
+      if (!res.ok) throw new Error(res.statusText);
+      const { job_id } = await res.json();
+      setJobId(job_id); // start polling
+    } catch (err) {
+      console.error('Error starting benchmark', err);
+      setResult({ error: 'Failed to start benchmark.' });
     }
   };
 
@@ -117,9 +149,9 @@ const Benchmark = () => {
     setLoadingSaved(true);
     try {
       const res = await fetch(
-        `http://localhost:8000/benchmark/${selectedRunId}`, {
-        headers: { 'Authorization': `Bearer ${token}` },
-      });
+        `http://localhost:8000/benchmark/${selectedRunId}`,
+        { headers: { 'Authorization': `Bearer ${token}` } }
+      );
       if (!res.ok) throw new Error(res.statusText);
       const data = await res.json();
       navigate('/metrics', { state: { metrics: data } });
@@ -131,6 +163,14 @@ const Benchmark = () => {
   };
 
   const renderResults = () => {
+    if (polling) {
+      return (
+        <Box textAlign="center" mt={4}>
+          <CircularProgress />
+          <Typography>Benchmark is running… (job {jobId})</Typography>
+        </Box>
+      );
+    }
     if (!result) return null;
     if (result.error) {
       return (
@@ -158,36 +198,30 @@ const Benchmark = () => {
               Per-Statement Results
             </Typography>
             <List dense>
-              {result.results.map((r, idx) => {
-                const preds = Array.isArray(r.predictions) ? r.predictions : [];
-                const corrects = Array.isArray(r.correctness) ? r.correctness : [];
-
-                return (
-                  <ListItem key={idx} alignItems="flex-start">
-                    <ListItemText
-                      primary={
+              {result.results.map((r, idx) => (
+                <ListItem key={idx} alignItems="flex-start">
+                  <ListItemText
+                    primary={
+                      <Typography variant="body2">
+                        <strong>#{idx + 1}:</strong> {r.statement}
+                      </Typography>
+                    }
+                    secondary={
+                      <Box component="div" sx={{ whiteSpace: 'pre-wrap' }}>
                         <Typography variant="body2">
-                          <strong>#{idx + 1}:</strong> {r.statement}
+                          Truth: <strong>{toBinaryLabel(r.gold_binary)}</strong>
                         </Typography>
-                      }
-                      secondary={
-                        <Box component="div" sx={{ whiteSpace: 'pre-wrap' }}>
-                          <Typography variant="body2">
-                            Truth:{' '}
-                            <strong>{toBinaryLabel(r.gold_binary)}</strong>
+                        {r.predictions.map((p, i) => (
+                          <Typography key={i} variant="body2">
+                            Iteration {i + 1}: <strong>{toBinaryLabel(p)}</strong>{' '}
+                            {r.correctness[i] ? '✅' : '❌'}
                           </Typography>
-                          {preds.map((p, i) => (
-                            <Typography key={i} variant="body2">
-                              Iteration {i + 1}: <strong>{toBinaryLabel(p)}</strong>{' '}
-                              {corrects[i] ? '✅' : '❌'}
-                            </Typography>
-                          ))}
-                        </Box>
-                      }
-                    />
-                  </ListItem>
-                );
-              })}
+                        ))}
+                      </Box>
+                    }
+                  />
+                </ListItem>
+              ))}
             </List>
 
             <Box textAlign="center" mt={2}>
@@ -205,7 +239,6 @@ const Benchmark = () => {
     );
   };
 
-  // if auth check not done yet
   if (!authChecked) {
     return (
       <Container>
@@ -217,7 +250,6 @@ const Benchmark = () => {
     );
   }
 
-  // if not signed in
   if (!token) {
     return (
       <Container>
@@ -297,6 +329,7 @@ const Benchmark = () => {
                 }
                 label="Use External Info"
               />
+
               <FormControl sx={{ minWidth: 140 }} size="small">
                 <InputLabel>Prompt Variant</InputLabel>
                 <Select
@@ -308,6 +341,7 @@ const Benchmark = () => {
                   <MenuItem value="short">Short</MenuItem>
                 </Select>
               </FormControl>
+
               <FormControl sx={{ minWidth: 140 }} size="small">
                 <InputLabel>Output Type</InputLabel>
                 <Select
@@ -320,6 +354,7 @@ const Benchmark = () => {
                   <MenuItem value="detailed">Detailed</MenuItem>
                 </Select>
               </FormControl>
+
               <TextField
                 label="Iterations"
                 type="number"
@@ -337,10 +372,10 @@ const Benchmark = () => {
               type="submit"
               variant="contained"
               color="primary"
-              disabled={loading}
+              disabled={polling}
               fullWidth
             >
-              {loading ? 'Benchmarking...' : 'Run Benchmark'}
+              {polling ? 'Benchmarking…' : 'Run Benchmark'}
             </Button>
           </form>
         </Paper>
@@ -349,6 +384,4 @@ const Benchmark = () => {
       </Box>
     </Container>
   );
-};
-
-export default Benchmark;
+}

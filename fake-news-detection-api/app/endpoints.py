@@ -1,16 +1,17 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Depends
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Depends, BackgroundTasks
 from app.deps import get_current_user
-import pandas as pd
-import numpy as np
-from pydantic import BaseModel, Field
-from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score
 from app.llm_manager import LLMManager
 from app.serp_agent import SerpAgent
+from pydantic import BaseModel, Field
+from sklearn.metrics import confusion_matrix, precision_score, recall_score, f1_score
+import pandas as pd
+import numpy as np
 import json
 import re
 import logging
 import os
-
+import uuid
+import shutil
 
 # Firebase Admin SDK
 import firebase_admin
@@ -20,9 +21,8 @@ SERVICE_ACCOUNT_PATH = os.getenv("FIREBASE_CRED_PATH")
 if not SERVICE_ACCOUNT_PATH:
     raise RuntimeError("Missing FIREBASE_CRED_PATH environment variable")
 
-# Use a service account.
 cred = credentials.Certificate(SERVICE_ACCOUNT_PATH)
-app = firebase_admin.initialize_app(cred)
+firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 # configure logger
@@ -51,42 +51,16 @@ async def classify_post(data: PostData):
     except Exception as e:
         raise HTTPException(502, f"Search-term extraction failed: {e}")
 
-    # 2) Use your CrewAI agents to fetch summarized article block
+    # 2) Fetch external info if desired
     articles_block = ""
     if data.use_external_info:
         try:
-            articles_block = serp.search_news(search_query, data.post) # <- uses the CrewAI workflow
-            print("🔎 Retrieved articles block:", articles_block)
+            articles_block = serp.search_news(search_query, data.post)
+            logger.info("🔎 Retrieved articles block")
         except Exception as e:
             raise HTTPException(502, f"AI-powered article research failed: {e}")
 
-    # 2) fetch articles once using google search
-    #articles_block = ""
-    #if data.use_external_info:
-    #    google_search = GoogleSearchNews()
-    #    try:
-    #        articles_block = google_search.search_news(search_query)
-    #        print(articles_block)
-    #    except Exception as e:
-    #        raise HTTPException(502, f"Article fetch failed: {e}")
-    #    finally:
-    #        google_search.close()
-
-    # 2) fetch articles once using tagesschau
-    #articles_block = ""
-    #if data.use_external_info:
-    #    outlet = NewsOutlet()
-    #    try:
-    #        links = outlet.search_articles(search_query)[:3]
-    #        arts = outlet.load_articles(links)
-    #        for idx, (link, texts) in enumerate(arts.items(), 1):
-    #            articles_block += f"Article [{idx}]\nLink: {link}\nContent: {' '.join(texts)}\n\n"
-    #    except Exception as e:
-    #        raise HTTPException(502, f"Article fetch failed: {e}")
-    #    finally:
-    #        outlet.close()
-
-    # 3) prepare the LLM messages once
+    # 3) Prepare the LLM messages
     messages = llm.build_messages(
         post=data.post,
         articles_block=articles_block,
@@ -95,7 +69,7 @@ async def classify_post(data: PostData):
         output_type=data.output_type
     )
 
-    # 4) run classification N times
+    # 4) Run classification N times
     responses = []
     for _ in range(data.iterations):
         try:
@@ -113,28 +87,30 @@ async def classify_post(data: PostData):
     }
 
 
-@router.post("/benchmark", dependencies=[Depends(get_current_user)])
-async def benchmark_csv(
-    file: UploadFile = File(...),
-    use_external_info: bool = Form(True),
-    prompt_variant: str = Form("default"),
-    output_type: str = Form("binary"),
-    iterations: int = Form(1, ge=1),
+def run_benchmark_job(
+    tmp_csv_path: str,
+    use_external_info: bool,
+    prompt_variant: str,
+    output_type: str,
+    iterations: int,
 ):
     # (1) load & clean CSV
     try:
-        df = pd.read_csv(file.file)
+        df = pd.read_csv(tmp_csv_path)
     except Exception as e:
-        raise HTTPException(400, f"Failed to read CSV: {e}")
+        logger.error(f"Failed to read CSV {tmp_csv_path}: {e}")
+        return
+
     df = df.dropna(subset=['statement','label'], how='all')
     df = df[df['statement'].astype(str).str.strip() != ""]
     if 'statement' not in df.columns or 'label' not in df.columns:
-        raise HTTPException(400, "CSV must contain 'statement' and 'label' columns")
+        logger.error("CSV missing required columns 'statement' or 'label'")
+        return
 
     # (2) run benchmarks
     all_gold, all_pred, all_scores = [], [], []
-    iter_correct = [0]*iterations
-    iter_total   = [0]*iterations
+    iter_correct = [0] * iterations
+    iter_total   = [0] * iterations
     results = []
 
     for idx, row in df.iterrows():
@@ -145,7 +121,8 @@ async def benchmark_csv(
         try:
             query = llm.extract_google_search_query(text)
         except Exception as e:
-            raise HTTPException(502, f"Row {idx}: search-term extraction failed: {e}")
+            logger.error(f"Row {idx}: search-term extraction failed: {e}")
+            continue
 
         # fetch articles
         articles = ""
@@ -153,7 +130,7 @@ async def benchmark_csv(
             try:
                 articles = serp.search_news(query, text)
             except Exception as e:
-                raise HTTPException(502, f"Row {idx}: external-info fetch failed: {e}")
+                logger.error(f"Row {idx}: external-info fetch failed: {e}")
 
         msgs = llm.build_messages(
             post=text,
@@ -168,7 +145,8 @@ async def benchmark_csv(
             try:
                 raw = llm.classify_once(msgs).strip()
             except Exception as e:
-                raise HTTPException(502, f"Row {idx}, iter {i}: classification failed: {e}")
+                logger.error(f"Row {idx}, iter {i}: classification failed: {e}")
+                continue
 
             # parse output
             pred_bin = False
@@ -215,36 +193,44 @@ async def benchmark_csv(
         })
 
     # (3) compute summary metrics
-    cm_list = confusion_matrix(all_gold, all_pred).tolist()
-    # flatten into a map
-    summary_cm = {
-        "TN": cm_list[0][0],
-        "FP": cm_list[0][1],
-        "FN": cm_list[1][0],
-        "TP": cm_list[1][1],
-    }
+    try:
+        tn_np, fp_np, fn_np, tp_np = confusion_matrix(all_gold, all_pred).ravel()
+        summary_cm = {
+            "TN": int(tn_np),
+            "FP": int(fp_np),
+            "FN": int(fn_np),
+            "TP": int(tp_np),
+        }
+    except Exception:
+        summary_cm = {"TN": 0, "FP": 0, "FN": 0, "TP": 0}
+
     precision = float(precision_score(all_gold, all_pred, zero_division=0))
     recall    = float(recall_score(all_gold, all_pred, zero_division=0))
     f1        = float(f1_score(all_gold, all_pred, zero_division=0))
 
-    # histogram
+    # histogram: edges.tolist() and counts.tolist() produce native types
     try:
-        import numpy as np
-        counts, edges = np.histogram(all_scores, bins=10, range=(0.0,1.0))
-        hist = {"bin_edges": [float(x) for x in edges], "counts": [int(x) for x in counts]}
-    except ImportError:
+        counts, edges = np.histogram(all_scores, bins=10, range=(0.0, 1.0))
+        hist = {
+            "bin_edges": edges.tolist(),
+            "counts":    counts.tolist(),
+        }
+    except Exception:
+        # fallback manual binning
         bins = [i/10 for i in range(11)]
         cnts = [0]*10
         for sc in all_scores:
-            idx = min(int(sc*10),9)
+            idx = min(int(sc*10), 9)
             cnts[idx] += 1
         hist = {"bin_edges": bins, "counts": cnts}
 
-    iter_acc = [float(iter_correct[i]/iter_total[i]) if iter_total[i]>0 else 0.0
-                for i in range(iterations)]
-    total_preds   = len(all_gold)
-    correct_preds = sum(int(g==p) for g,p in zip(all_gold, all_pred))
-    overall_acc   = float(correct_preds/total_preds) if total_preds>0 else 0.0
+    iter_acc = [
+        float(iter_correct[i]) / int(iter_total[i]) if iter_total[i] > 0 else 0.0
+        for i in range(iterations)
+    ]
+    total_preds   = int(len(all_gold))
+    correct_preds = int(sum(1 for g,p in zip(all_gold, all_pred) if g == p))
+    overall_acc   = float(correct_preds) / float(total_preds) if total_preds > 0 else 0.0
 
     summary_metrics = {
         "accuracy":           overall_acc,
@@ -264,42 +250,63 @@ async def benchmark_csv(
         "research_model": serp.research_model,
         "summary_model":  serp.summary_model,
     }
-
     # (4) save to Firestore
     try:
         doc = db.collection("benchmarks").document()
         doc.set({
             "timestamp": firestore.SERVER_TIMESTAMP,
             "params": {
+                **model_params,
                 "use_external_info": use_external_info,
-                "prompt_variant": prompt_variant,
-                "output_type": output_type,
-                "iterations": iterations,
-                **model_params
+                "prompt_variant":    prompt_variant,
+                "output_type":       output_type,
+                "iterations":        int(iterations),
             },
             "metrics": summary_metrics,
         })
-        # detailed results in subcollection
         batch = db.batch()
         for r in results:
             batch.set(doc.collection("results").document(), r)
         batch.commit()
-        summary_metrics["id"] = doc.id
         logger.info(f"Saved benchmark {doc.id}")
     except Exception as e:
         logger.exception("Firestore save failed")
-        raise HTTPException(500, f"Could not save benchmark: {e}")
 
-    # (5) return
+    # clean up
+    try:
+        os.remove(tmp_csv_path)
+    except OSError:
+        pass
+
+
+@router.post("/benchmark", dependencies=[Depends(get_current_user)])
+async def benchmark_csv(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    use_external_info: bool = Form(True),
+    prompt_variant: str = Form("default"),
+    output_type: str = Form("binary"),
+    iterations: int = Form(1, ge=1),
+):
+    # save the upload to a temp file
+    job_id = str(uuid.uuid4())
+    tmp_path = f"/tmp/benchmark_{job_id}.csv"
+    with open(tmp_path, "wb") as out_f:
+        shutil.copyfileobj(file.file, out_f)
+
+    # schedule the background job
+    background_tasks.add_task(
+        run_benchmark_job,
+        tmp_path,
+        use_external_info,
+        prompt_variant,
+        output_type,
+        iterations,
+    )
+
     return {
-        **summary_metrics,
-        "results_id":          doc.id,
-        "results":             results,
-        "used_prompt_variant": prompt_variant,
-        "external_info_used":  use_external_info,
-        "output_type":         output_type,
-        "iterations":          iterations,
-        **model_params
+        "job_id": job_id,
+        "message": "Benchmark started successfully—I'll keep running it even if you close the UI."
     }
 
 
@@ -312,20 +319,17 @@ async def list_benchmarks(limit: int = 20):
     for snap in snapshots:
         data = snap.to_dict() or {}
         ts   = data.get("timestamp")
-        # convert Firestore Timestamp to ISO string
         try:
             ts_str = ts.isoformat()
-        except Exception:
-            try:
-                ts_str = ts.to_rfc3339()
-            except Exception:
-                ts_str = str(ts)
+        except:
+            ts_str = str(ts)
         items.append({
             "id":        snap.id,
             "timestamp": ts_str,
             "params":    data.get("params"),
         })
     return items
+
 
 @router.get("/benchmark/{benchmark_id}", dependencies=[Depends(get_current_user)])
 async def get_benchmark(benchmark_id: str):
@@ -338,15 +342,13 @@ async def get_benchmark(benchmark_id: str):
     metrics = saved.get("metrics", {})
     params  = saved.get("params", {})
 
-    # load detailed results subcollection
     results = []
     for r_snap in doc_ref.collection("results").stream():
         results.append(r_snap.to_dict())
 
-    # merge: metrics (flat) + results + params
     return {
         **metrics,
         "results": results,
-        **params,                     # now includes output_type, prompt_variant, etc.
+        **params,
         "id": benchmark_id,
     }
