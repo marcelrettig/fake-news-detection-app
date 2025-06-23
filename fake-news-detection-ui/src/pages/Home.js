@@ -68,7 +68,7 @@ const Home = () => {
     };
 
     try {
-      const response = await fetch(`${API_BASE}:8000/classify`, {
+      const response = await fetch(`${API_BASE}/classify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
