@@ -4,6 +4,7 @@ from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI
 
 serp_key = os.getenv("SERP_API_KEY")
+print(serp_key)
 if not serp_key:
     raise RuntimeError("Missing SERPER_API_KEY environment variable")
 
@@ -13,6 +14,7 @@ search_tool = SerperDevTool(api_key=serp_key)
 class SerpAgent:
     def __init__(self):
         openai_key = os.getenv("OPENAI_API_KEY")
+        os.environ['SERPER_API_KEY'] = serp_key
         self.research_model = os.getenv("LLM_RESEARCH_MODEL", "gpt-4o")
         self.summary_model  = os.getenv("LLM_SUMMARY_MODEL",  "gpt-4o")
         self.research_llm = ChatOpenAI(
