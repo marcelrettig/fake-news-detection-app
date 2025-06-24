@@ -4,7 +4,6 @@ from crewai_tools import SerperDevTool
 from langchain_openai import ChatOpenAI
 
 serp_key = os.getenv("SERP_API_KEY")
-print(serp_key)
 if not serp_key:
     raise RuntimeError("Missing SERPER_API_KEY environment variable")
 

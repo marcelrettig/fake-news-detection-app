@@ -12,6 +12,8 @@ import logging
 import os
 import uuid
 import shutil
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Firebase Admin SDK
 import firebase_admin
@@ -87,6 +89,80 @@ async def classify_post(data: PostData):
     }
 
 
+def classify_row(idx, row, use_external_info, prompt_variant, output_type, iterations):
+    text = str(row['statement'])
+    gold_bin = int(row['label']) >= 4
+
+    # extract query
+    try:
+        query = llm.extract_google_search_query(text)
+    except Exception as e:
+        logger.error(f"Row {idx}: search-term extraction failed: {e}")
+        return None
+
+    # fetch articles
+    articles = ""
+    if use_external_info:
+        try:
+            articles = serp.search_news(query, text)
+        except Exception as e:
+            logger.error(f"Row {idx}: external-info fetch failed: {e}")
+
+    msgs = llm.build_messages(
+        post=text,
+        articles_block=articles,
+        use_external=use_external_info,
+        prompt_variant=prompt_variant,
+        output_type=output_type,
+    )
+
+    preds, scores, corrects = [], [], []
+    for i in range(iterations):
+        try:
+            raw = llm.classify_once(msgs).strip()
+        except Exception as e:
+            logger.error(f"Row {idx}, iter {i}: classification failed: {e}")
+            continue
+
+        # parse output
+        pred_bin = False
+        pred_sc  = None
+        try:
+            obj = json.loads(raw)
+            if 'verdict' in obj:
+                pred_bin = obj['verdict'].strip().lower() == 'true'
+            if 'score' in obj:
+                pred_sc  = float(obj['score'])
+                pred_bin = pred_sc >= 0.5
+        except:
+            low = raw.lower()
+            if 'true' in low and 'false' not in low:
+                pred_bin = True
+            elif 'false' in low and 'true' not in low:
+                pred_bin = False
+            else:
+                m = re.search(r'\b0(?:\.\d+)?|1(?:\.0+)?\b', low)
+                if m:
+                    pred_sc  = float(m.group(0))
+                    pred_bin = pred_sc >= 0.5
+
+        if pred_sc is None:
+            pred_sc = 1.0 if pred_bin else 0.0
+
+        is_corr = (pred_bin == gold_bin)
+        preds.append(pred_bin)
+        scores.append(pred_sc)
+        corrects.append(is_corr)
+
+    return {
+        "statement":   text,
+        "gold_binary": gold_bin,
+        "predictions": preds,
+        "scores":      scores,
+        "correctness": corrects,
+    }
+
+
 def run_benchmark_job(
     tmp_csv_path: str,
     use_external_info: bool,
@@ -95,6 +171,8 @@ def run_benchmark_job(
     iterations: int,
     job_id: str,
 ):
+    start_time = time.time()
+
     # (1) load & clean CSV
     try:
         df = pd.read_csv(tmp_csv_path)
@@ -108,100 +186,40 @@ def run_benchmark_job(
         logger.error("CSV missing required columns 'statement' or 'label'")
         return
 
-    # (2) run benchmarks
+    # (2) run benchmarks in parallel
+    results = []
+    max_workers = min(32, len(df))
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(classify_row, idx, row, use_external_info, prompt_variant, output_type, iterations): idx
+            for idx, row in df.iterrows()
+        }
+        for fut in as_completed(futures):
+            idx = futures[fut]
+            try:
+                res = fut.result()
+                if res is not None:
+                    results.append(res)
+            except Exception as e:
+                logger.error(f"Row {idx} failed: {e}")
+
+    # (3) compute summary metrics
     all_gold, all_pred, all_scores = [], [], []
     iter_correct = [0] * iterations
     iter_total   = [0] * iterations
-    results = []
 
-    for idx, row in df.iterrows():
-        text = str(row['statement'])
-        gold_bin = int(row['label']) >= 4
-
-        # extract query
-        try:
-            query = llm.extract_google_search_query(text)
-        except Exception as e:
-            logger.error(f"Row {idx}: search-term extraction failed: {e}")
-            continue
-
-        # fetch articles
-        articles = ""
-        if use_external_info:
-            try:
-                articles = serp.search_news(query, text)
-            except Exception as e:
-                logger.error(f"Row {idx}: external-info fetch failed: {e}")
-
-        msgs = llm.build_messages(
-            post=text,
-            articles_block=articles,
-            use_external=use_external_info,
-            prompt_variant=prompt_variant,
-            output_type=output_type,
-        )
-
-        preds, scores, corrects = [], [], []
-        for i in range(iterations):
-            try:
-                raw = llm.classify_once(msgs).strip()
-            except Exception as e:
-                logger.error(f"Row {idx}, iter {i}: classification failed: {e}")
-                continue
-
-            # parse output
-            pred_bin = False
-            pred_sc  = None
-            try:
-                obj = json.loads(raw)
-                if 'verdict' in obj:
-                    pred_bin = obj['verdict'].strip().lower() == 'true'
-                if 'score' in obj:
-                    pred_sc  = float(obj['score'])
-                    pred_bin = pred_sc >= 0.5
-            except:
-                low = raw.lower()
-                if 'true' in low and 'false' not in low:
-                    pred_bin = True
-                elif 'false' in low and 'true' not in low:
-                    pred_bin = False
-                else:
-                    m = re.search(r'\b0(?:\.\d+)?|1(?:\.0+)?\b', low)
-                    if m:
-                        pred_sc  = float(m.group(0))
-                        pred_bin = pred_sc >= 0.5
-
-            if pred_sc is None:
-                pred_sc = 1.0 if pred_bin else 0.0
-
-            is_corr = (pred_bin == gold_bin)
-            preds.append(pred_bin)
-            scores.append(pred_sc)
-            corrects.append(is_corr)
-
-            all_gold.append(gold_bin)
-            all_pred.append(pred_bin)
-            all_scores.append(pred_sc)
+    for r in results:
+        gold = r["gold_binary"]
+        for i, (pred, sc, corr) in enumerate(zip(r["predictions"], r["scores"], r["correctness"])):
+            all_gold.append(gold)
+            all_pred.append(pred)
+            all_scores.append(sc)
             iter_total[i]   += 1
-            iter_correct[i] += int(is_corr)
+            iter_correct[i] += int(corr)
 
-        results.append({
-            "statement":   text,
-            "gold_binary": gold_bin,
-            "predictions": preds,
-            "scores":      scores,
-            "correctness": corrects,
-        })
-
-    # (3) compute summary metrics
     try:
         tn_np, fp_np, fn_np, tp_np = confusion_matrix(all_gold, all_pred).ravel()
-        summary_cm = {
-            "TN": int(tn_np),
-            "FP": int(fp_np),
-            "FN": int(fn_np),
-            "TP": int(tp_np),
-        }
+        summary_cm = {"TN": int(tn_np), "FP": int(fp_np), "FN": int(fn_np), "TP": int(tp_np)}
     except Exception:
         summary_cm = {"TN": 0, "FP": 0, "FN": 0, "TP": 0}
 
@@ -209,15 +227,10 @@ def run_benchmark_job(
     recall    = float(recall_score(all_gold, all_pred, zero_division=0))
     f1        = float(f1_score(all_gold, all_pred, zero_division=0))
 
-    # histogram: edges.tolist() and counts.tolist() produce native types
     try:
         counts, edges = np.histogram(all_scores, bins=10, range=(0.0, 1.0))
-        hist = {
-            "bin_edges": edges.tolist(),
-            "counts":    counts.tolist(),
-        }
+        hist = {"bin_edges": edges.tolist(), "counts": counts.tolist()}
     except Exception:
-        # fallback manual binning
         bins = [i/10 for i in range(11)]
         cnts = [0]*10
         for sc in all_scores:
@@ -233,6 +246,9 @@ def run_benchmark_job(
     correct_preds = int(sum(1 for g,p in zip(all_gold, all_pred) if g == p))
     overall_acc   = float(correct_preds) / float(total_preds) if total_preds > 0 else 0.0
 
+    end_time = time.time()
+    duration = end_time - start_time
+
     summary_metrics = {
         "accuracy":           overall_acc,
         "precision":          precision,
@@ -243,6 +259,7 @@ def run_benchmark_job(
         "iteration_accuracy": iter_acc,
         "total_predictions":  total_preds,
         "correct_predictions":correct_preds,
+        "duration_seconds":   duration
     }
 
     model_params = {
@@ -251,6 +268,7 @@ def run_benchmark_job(
         "research_model": serp.research_model,
         "summary_model":  serp.summary_model,
     }
+
     # (4) save to Firestore
     try:
         doc = db.collection("benchmarks").document(job_id)
@@ -311,7 +329,6 @@ async def benchmark_csv(
         "message": "Benchmark started successfully—I'll keep running it even if you close the UI."
     }
 
-
 @router.get("/benchmarks", dependencies=[Depends(get_current_user)])
 async def list_benchmarks(limit: int = 20):
     col   = db.collection("benchmarks")
@@ -331,7 +348,6 @@ async def list_benchmarks(limit: int = 20):
             "params":    data.get("params"),
         })
     return items
-
 
 @router.get("/benchmark/{benchmark_id}", dependencies=[Depends(get_current_user)])
 async def get_benchmark(benchmark_id: str):
