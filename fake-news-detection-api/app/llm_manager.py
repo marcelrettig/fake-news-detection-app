@@ -155,8 +155,8 @@ class LLMManager:
                     user_content = (
                         f"Article:\n{articles_block}\n"
                         f"Claim: \"{post}\"\n"
-                        "Based on the article, rate the truthfulness from 0 (definitely false) to 1 (definitely true).\n"
-                        "Respond with only a number between 0 and 1."
+                        "Based on the article, rate the truthfulness from 0.00 (definitely false) to 1.00 (definitely true).\n"
+                        "Respond with only a number between 0.00 and 1.00"
                     )
                 else:  # detailed
                     user_content = (

@@ -27,3 +27,4 @@ docker-compose.override.yml
 # IDEs / OS
 .vscode/
 .DS_Store
+.idea
