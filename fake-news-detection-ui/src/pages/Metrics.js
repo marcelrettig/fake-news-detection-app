@@ -16,20 +16,9 @@ const Metrics = () => {
   const raw = state?.metrics || {};
   const data = { ...(raw.metrics ?? raw), ...(raw.params ?? {}) };
 
-  // Compute all chart data unconditionally
-  const {
-    prfData,
-    rocData,
-    prCurveData,
-    prAuc,
-    histData,
-    iterData
-  } = useMemo(() => {
+  const { prfData, rocData, prCurveData, prAuc, histData, iterData } = useMemo(() => {
     if (!data || !Array.isArray(data.results)) {
-      return {
-        prfData: [], rocData: [], prCurveData: [], prAuc: 0,
-        histData: [], iterData: []
-      };
+      return { prfData: [], rocData: [], prCurveData: [], prAuc: 0, histData: [], iterData: [] };
     }
     const prfData = [
       { name: 'Precision', value: data.precision },
@@ -38,13 +27,13 @@ const Metrics = () => {
     ];
     const flatScores = data.results.flatMap(r => r.scores);
     const flatTrue   = data.results.flatMap(r => r.scores.map(() => r.gold_binary ? 1 : 0));
-    const unique = Array.from(new Set(flatScores)).sort((a,b) => b - a);
-    const maxScore = unique[0] ?? 0;
-    const minScore = unique[unique.length - 1] ?? 0;
+    const unique     = Array.from(new Set(flatScores)).sort((a,b) => b - a);
+    const maxScore   = unique[0] ?? 0;
+    const minScore   = unique[unique.length - 1] ?? 0;
     const thresholds = [maxScore + Number.EPSILON, ...unique, minScore - Number.EPSILON];
     const rocData = thresholds.map(thr => {
-      let tp=0, fp=0, tn=0, fn=0;
-      flatScores.forEach((sc,i) => {
+      let tp = 0, fp = 0, tn = 0, fn = 0;
+      flatScores.forEach((sc, i) => {
         const pred = sc >= thr;
         const gt   = flatTrue[i];
         tp += pred && gt;
@@ -55,8 +44,8 @@ const Metrics = () => {
       return { threshold: thr, fpr: fp/(fp+tn) || 0, tpr: tp/(tp+fn) || 0 };
     }).sort((a,b) => a.fpr - b.fpr);
     const prCurveData = thresholds.map(thr => {
-      let tp=0, fp=0, fn=0;
-      flatScores.forEach((sc,i) => {
+      let tp = 0, fp = 0, fn = 0;
+      flatScores.forEach((sc, i) => {
         const pred = sc >= thr;
         const gt   = flatTrue[i];
         tp += pred && gt;
@@ -72,12 +61,11 @@ const Metrics = () => {
       return area + ((curr.recall - prev.recall) * (curr.precision + prev.precision) / 2);
     }, 0);
     const { bin_edges = [], counts = [] } = data.score_histogram || {};
-    const histData = counts.map((cnt,i) => ({ bin: `${bin_edges[i].toFixed(1)}–${bin_edges[i+1].toFixed(1)}`, count: cnt }));
-    const iterData = (data.iteration_accuracy || []).map((acc,i) => ({ iteration: i + 1, accuracy: acc }));
+    const histData = counts.map((cnt, i) => ({ bin: `${bin_edges[i].toFixed(1)}–${bin_edges[i+1].toFixed(1)}`, count: cnt }));
+    const iterData = (data.iteration_accuracy || []).map((acc, i) => ({ iteration: i + 1, accuracy: acc }));
     return { prfData, rocData, prCurveData, prAuc, histData, iterData };
   }, [data]);
 
-  // Early return if no valid metrics
   if (!data || !Array.isArray(data.results)) {
     return (
       <Container>
@@ -146,24 +134,24 @@ const Metrics = () => {
             <Paper>
               <Table size="small">
                 <TableHead>
-                  <TableRow>
-                    <TableCell />
-                    <TableCell align="center"><strong>Pred False</strong></TableCell>
-                    <TableCell align="center"><strong>Pred True</strong></TableCell>
-                  </TableRow>
-                </TableHead>
-                <TableBody>
-                  <TableRow>
-                    <TableCell><strong>Actual False</strong></TableCell>
-                    <TableCell align="center">{data.confusion_matrix?.TN}</TableCell>
-                    <TableCell align="center">{data.confusion_matrix?.FP}</TableCell>
-                  </TableRow>
-                  <TableRow>
-                    <TableCell><strong>Actual True</strong></TableCell>
-                    <TableCell align="center">{data.confusion_matrix?.FN}</TableCell>
-                    <TableCell align="center">{data.confusion_matrix?.TP}</TableCell>
-                  </TableRow>
-                </TableBody>
+  <TableRow>
+    <TableCell />
+    <TableCell align="center"><strong>Pred Fake</strong></TableCell>
+    <TableCell align="center"><strong>Pred TrueNews</strong></TableCell>
+  </TableRow>
+</TableHead>
+<TableBody>
+  <TableRow>
+    <TableCell><strong>Actual Fake</strong></TableCell>
+    <TableCell align="center">TP: {data.confusion_matrix?.TP}</TableCell>
+    <TableCell align="center">FN: {data.confusion_matrix?.FN}</TableCell>
+  </TableRow>
+  <TableRow>
+    <TableCell><strong>Actual TrueNews</strong></TableCell>
+    <TableCell align="center">FP: {data.confusion_matrix?.FP}</TableCell>
+    <TableCell align="center">TN: {data.confusion_matrix?.TN}</TableCell>
+  </TableRow>
+</TableBody>
               </Table>
             </Paper>
           </Box>
