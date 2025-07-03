@@ -1,0 +1,55 @@
+@startuml BenchmarkFlow
+|Endpoints|
+start
+:Receive POST /benchmark;
+:Save uploaded CSV to /tmp;
+:Schedule BackgroundTasks.benchmark_run(...);
+:Return job_id;
+stop
+
+|BenchmarkService|
+start
+:run(csv_path, use_external, variant, output, iterations, job_id);
+:df = read CSV;
+if (df.empty?) then (yes)
+    :log error and exit;
+    stop
+endif
+:collect model and run settings;
+
+fork
+    :Parallel classify rows;
+    --> ThreadPoolExecutor: submit _classify_row(idx, row, ...);
+fork again
+    :_classify_row(idx, row, ...);
+    -->
+    |ClassificationService|
+    :extract_query(text);
+    :query = extract_google_search_query(text);
+    if (use_external_info?) then (yes)
+        -->
+        |SerpAgent|
+        :search_news(query, text);
+        :perform search & summary;
+        -->
+        |ClassificationService|
+        :articles returned;
+    endif
+    :build_messages(post, articles, variant, output);
+    -->
+    |LLMManager|
+    :classify_once(messages);
+    :call OpenAI API;
+    -->
+    |BenchmarkService|
+    :parse_output(raw);
+    :pred, score = parse_output(raw);
+    :return row result;
+end fork
+
+:results collected;
+:compute summary metrics;
+:save summary and results to Firestore;
+:remove tmp file;
+stop
+@enduml

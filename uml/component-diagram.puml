@@ -1,0 +1,52 @@
+@startuml
+' UML-Komponenten-Style
+skinparam componentStyle uml2
+
+' Frontend-Paket
+package "Frontend" {
+  component "React Application" <<WebApp>> as ReactApp
+  component "Home\n(Classification UI)" <<UI>> as HomeUI
+  component "Benchmark\n(CSV Benchmark UI)" <<UI>> as BenchmarkUI
+  component "Metrics\n(Detailed Metrics UI)" <<UI>> as MetricsUI
+}
+
+' Backend-Paket
+package "Backend" {
+  component "FastAPI REST API" <<REST API>> as API
+  component "ClassificationService" <<Service>> as ClassSvc
+  component "BenchmarkService"      <<Service>> as BenSvc
+  component "LLMManager"            <<Service>> as LLM
+  component "SerpAgent"             <<Service>> as Serp
+  database  "Firestore"             <<Database>> as DB
+}
+
+' Externe Systeme
+component "OpenAI API"     <<External Service>> as OpenAI
+component "SerperDevTool"  <<External Service>> as Serper
+
+' Beziehungen Frontend → Backend
+ReactApp --> HomeUI
+ReactApp --> BenchmarkUI
+ReactApp --> MetricsUI
+
+HomeUI      ..> API : POST /classify
+BenchmarkUI ..> API : POST /benchmark
+BenchmarkUI ..> API : GET /benchmarks
+MetricsUI   ..> API : GET /benchmark/{id}
+
+' Backend-API zu Services
+API --> ClassSvc
+API --> BenSvc
+
+' Service-Abhängigkeiten
+ClassSvc --> LLM : nutzt
+ClassSvc --> Serp : nutzt
+
+BenSvc --> ClassSvc  : orchestriert
+BenSvc --> DB        : speichert / liest
+
+' Externe Service-Aufrufe
+LLM  --> OpenAI : LLM-Requests
+Serp --> Serper : News-Search API
+
+@enduml

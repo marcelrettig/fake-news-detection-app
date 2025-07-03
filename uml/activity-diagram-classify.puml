@@ -1,0 +1,42 @@
+```plantuml
+@startuml ClassifyFlow
+|Endpoints|
+start
+:Receive POST /classify;
+:Authenticate user;
+:Validate PostData;
+-->
+|ClassificationService|
+:extract_query(text);
+:query = extract_google_search_query(text);
+
+if (use_external_info?) then (yes)
+    :fetch_articles(query, text, true);
+    -->
+    |SerpAgent|
+    :search_news(query, text);
+    :perform search & summary;
+    -->
+    |ClassificationService|
+    :articles returned;
+endif
+
+|ClassificationService|
+:build_messages(text, articles, use_external, variant, output);
+
+repeat
+    -->
+    |LLMManager|
+    :classify_once(messages);
+    :call OpenAI API;
+    -->
+    |ClassificationService|
+    :collect raw_response;
+repeat while (i < iterations)
+
+-->
+|Endpoints|
+:Return responses;
+stop
+@enduml
+```
