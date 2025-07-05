@@ -14,20 +14,25 @@ class SerpAgent:
     def __init__(self):
         openai_key = os.getenv("OPENAI_API_KEY")
         os.environ['SERPER_API_KEY'] = serp_key
-        self.research_model = os.getenv("LLM_RESEARCH_MODEL", "gpt-4o")
-        self.summary_model  = os.getenv("LLM_SUMMARY_MODEL",  "gpt-4o")
-        self.research_llm = ChatOpenAI(
-            model_name=self.research_model,
-            temperature=0.3,
-            api_key=openai_key
-        )
-        self.writer_llm = ChatOpenAI(
-            model_name=self.summary_model,
-            temperature=0.5,
-            api_key=openai_key
-        )
+        
+
+    def set_model(self, model: str):
+        self.research_model = model
+        self.summary_model  = model
 
     def search_news(self, query: str, post: str,) -> str:
+
+        research_llm = ChatOpenAI(
+            model_name=self.research_model,
+            temperature=0.3,
+            api_key=serp_key
+        )
+        writer_llm = ChatOpenAI(
+            model_name=self.summary_model,
+            temperature=0.5,
+            api_key=serp_key
+        )
+
         # Researcher agent
         researcher = Agent(
             role="Google News Research Agent",
@@ -38,7 +43,7 @@ class SerpAgent:
             verbose=False,
             allow_delegation=False,
             tools=[search_tool],
-            llm=self.research_llm
+            llm=research_llm
         )
 
         # Writer agent
@@ -49,7 +54,7 @@ class SerpAgent:
             You transform raw news data into well-structured summaries that capture the most important points. You always include links to the original articles to ensure transparency and source validation.""",
             verbose=True,
             allow_delegation=False,
-            llm=self.writer_llm
+            llm=writer_llm
         )
 
         # Research task

@@ -30,6 +30,10 @@ export default function Benchmark() {
   const [outputType, setOutputType] = useState('score');
   const [iterations, setIterations] = useState(1);
 
+  const [model, setModel] = useState(
+    process.env.REACT_APP_LLM_MODEL || 'gpt-4o'
+  );
+
   // auth state
   const [token, setToken] = useState('');
   const [authChecked, setAuthChecked] = useState(false);
@@ -49,7 +53,6 @@ export default function Benchmark() {
 
   const API_BASE = process.env.REACT_APP_API_BASE_URL || '';
 
-
   // listen for Firebase auth state
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async user => {
@@ -64,7 +67,7 @@ export default function Benchmark() {
     return () => unsubscribe();
   }, []);
 
-  // fetch saved benchmarks once we have a token
+  // fetch saved benchmarks once we have a token and API_BASE
   useEffect(() => {
     if (!token) return;
     (async () => {
@@ -79,9 +82,9 @@ export default function Benchmark() {
         console.error('Failed to load saved benchmarks', err);
       }
     })();
-  }, [token]);
+  }, [token, API_BASE]);  // <-- added API_BASE here
 
-  // poll for job results
+  // poll for job results, re-run if jobId, token, or API_BASE change
   useEffect(() => {
     if (!jobId) return;
     setPolling(true);
@@ -116,7 +119,7 @@ export default function Benchmark() {
     }, 3000);
 
     return () => clearInterval(pollRef.current);
-  }, [jobId, token]);
+  }, [jobId, token, API_BASE]);  // <-- added API_BASE here
 
   const toBinaryLabel = v => (v ? 'True' : 'False');
 
@@ -138,6 +141,7 @@ export default function Benchmark() {
     formData.append('prompt_variant', promptVariant);
     formData.append('output_type', outputType);
     formData.append('iterations', String(iterations));
+    formData.append('model', model);
 
     try {
       const res = await fetch(`${API_BASE}/benchmark`, {
@@ -376,7 +380,21 @@ export default function Benchmark() {
                 size="small"
                 sx={{ width: 100 }}
               />
-            </Box>
+
+            <FormControl sx={{ minWidth: 180 }} size="small">
+                <InputLabel id="model-select-label">Model</InputLabel>
+                <Select
+                  labelId="model-select-label"
+                  value={model}
+                  label="Model"
+                  onChange={e => setModel(e.target.value)}
+                >
+                  <MenuItem value="gpt-4o">GPT-4o</MenuItem>
+                  <MenuItem value="gpt-4">GPT-4</MenuItem>
+                  <MenuItem value="gpt-3.5-turbo">GPT-3.5 Turbo</MenuItem>
+                </Select>
+              </FormControl>
+              </Box>
 
             <Button
               type="submit"

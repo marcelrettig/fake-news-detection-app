@@ -73,12 +73,16 @@ async def benchmark_csv(
     prompt_variant: str = Form("default"),
     output_type: str = Form("binary"),
     iterations: int = Form(1, ge=1),
+    model: str = Form(None),
 ):
     # Temporäre CSV speichern
     job_id = str(uuid.uuid4())
     tmp_path = f"/tmp/benchmark_{job_id}.csv"
     with open(tmp_path, "wb") as out_f:
         shutil.copyfileobj(file.file, out_f)
+
+    selected_model = model or os.getenv("LLM_CLASSIFY_MODEL", "gpt-4o")
+
 
     # Hintergrund-Job planen
     background_tasks.add_task(
@@ -88,6 +92,7 @@ async def benchmark_csv(
         prompt_variant,
         output_type,
         iterations,
+        selected_model,
         job_id,
     )
 

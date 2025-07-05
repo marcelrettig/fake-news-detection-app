@@ -18,8 +18,12 @@ const Metrics = () => {
   const [threshold, setThreshold] = useState(0.5);
   const handleThresholdChange = (_, value) => setThreshold(value);
 
+  // Memoize data to avoid recreating on every render
   const raw = state?.metrics || {};
-  const data = { ...(raw.metrics ?? raw), ...(raw.params ?? {}) };
+  const data = useMemo(() => ({
+    ...(raw.metrics ?? raw),
+    ...(raw.params ?? {})
+  }), [raw]);
 
   const {
     flatScores,
@@ -44,16 +48,15 @@ const Metrics = () => {
       };
     }
 
-    let flatScores = [],   // for score & detailed modes
-        flatTrue   = [],   // ground-truth labels
-        flatPreds  = [];   // for binary mode
+    let flatScores = [],
+        flatTrue   = [],
+        flatPreds  = [];
 
     // Score or Detailed mode: use raw score curve
     if (data.output_type === 'score' || data.output_type === 'detailed') {
       flatScores = data.results.flatMap(r => r.scores);
       flatTrue   = data.results.flatMap(r => r.scores.map(() => r.gold_binary ? 1 : 0));
 
-      // thresholds for ROC/PR
       const unique     = Array.from(new Set(flatScores)).sort((a, b) => b - a);
       const maxScore   = unique[0] ?? 0;
       const minScore   = unique[unique.length - 1] ?? 0;
@@ -95,14 +98,12 @@ const Metrics = () => {
         return area + ((curr.recall - prev.recall) * (curr.precision + prev.precision) / 2);
       }, 0);
 
-      // histogram
       const { bin_edges = [], counts = [] } = data.score_histogram || {};
       const histData = counts.map((cnt, i) => ({
         bin: `${bin_edges[i].toFixed(1)}–${bin_edges[i + 1].toFixed(1)}`,
         count: cnt
       }));
 
-      // iteration accuracy
       const iterData = (data.iteration_accuracy || []).map((acc, i) => ({
         iteration: i + 1,
         accuracy: acc
@@ -132,13 +133,10 @@ const Metrics = () => {
       return { flatScores: [], flatTrue, flatPreds, rocData: [], prCurveData: [], prAuc: 0, histData, iterData };
     }
 
-    // fallback
     return { flatScores: [], flatTrue: [], flatPreds: [], rocData: [], prCurveData: [], prAuc: 0, histData: [], iterData: [] };
   }, [data]);
 
-  // Compute PRF and confusion matrix (use backend if available)
   const { prfData, confusion } = useMemo(() => {
-    // use backend contradictions if provided
     if (data.output_type === 'binary' && data.confusion_matrix) {
       const { TP, FP, FN, TN } = data.confusion_matrix;
       const precision = TP / (TP + FP) || 0;
@@ -186,9 +184,7 @@ const Metrics = () => {
       ],
       confusion: { TP: tp, FP: fp, FN: fn, TN: tn }
     };
-  }, [ // re-run if backend matrix changes or local deps
-    data.confusion_matrix, threshold, flatScores, flatPreds, flatTrue, data.output_type
-  ]);
+  }, [data.confusion_matrix, threshold, flatScores, flatPreds, flatTrue, data.output_type]);
 
   if (!data || !Array.isArray(data.results)) {
     return (

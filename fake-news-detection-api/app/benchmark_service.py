@@ -138,8 +138,18 @@ class BenchmarkService:
         batch.commit()
         logger.info(f"Benchmark {job_id} gespeichert.")
 
-    def run(self, csv_path: str, use_external: bool, variant: str, output: str, iterations: int, job_id: str):
+    def run(self, csv_path: str, use_external: bool, variant: str, output: str, iterations: int, model: str, job_id: str):
         start = time.time()
+        self.classifier.llm.set_model(model)
+        self.classifier.serp.set_model(model)
+
+        # 1) Override your LLM & SerpAgent models for this run
+        logger.info(f"Starting benchmark {job_id} using LLM model '{model}'")
+        self.classifier.llm.extract_model   = model
+        self.classifier.llm.classify_model  = model
+        self.classifier.serp.research_model = model
+        self.classifier.serp.summary_model  = model
+
         df = pd.read_csv(csv_path).dropna(subset=["statement", "label"])
         df = df[df["statement"].astype(str).str.strip() != ""]
         if df.empty:
@@ -152,7 +162,9 @@ class BenchmarkService:
             "classify_model":  self.classifier.llm.classify_model,
             "research_model":  self.classifier.serp.research_model,
             "summary_model":   self.classifier.serp.summary_model,
+            "selected_model":  model,
         }
+
         params = {
             **model_params,
             "use_external_info": use_external,

@@ -20,6 +20,10 @@ class LLMManager:
 
         logger.info("LLMManager initialized with OpenAI client")
 
+    def set_model(self, model: str):
+        logger.info(f"Switching LLMManager models → {model}")
+        self.extract_model   = model
+        self.classify_model  = model
 
     def extract_google_search_query(self, text: str) -> str:
         logger.debug("Extracting search query for text: %r", text)
