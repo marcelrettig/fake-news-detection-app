@@ -3,28 +3,28 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Container, Box, Typography, Button, Divider,
   Slider,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper
+  Table, TableBody, TableCell, TableHead, TableRow, Paper,
+  CircularProgress
 } from '@mui/material';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip,
-  LineChart, Line, CartesianGrid
+  LineChart, Line
 } from 'recharts';
 
 const Metrics = () => {
   const { state } = useLocation();
   const navigate = useNavigate();
 
+  // pulled in from Benchmark.js
+  const data = state.metrics;
+  const { plotImages, loadingPlots, plotError } = state;
+
   // Slider state for threshold
   const [threshold, setThreshold] = useState(0.5);
   const handleThresholdChange = (_, value) => setThreshold(value);
 
   // Memoize data to avoid recreating on every render
-  const raw = state?.metrics || {};
-  const data = useMemo(() => ({
-    ...(raw.metrics ?? raw),
-    ...(raw.params ?? {})
-  }), [raw]);
-
+  const raw = data;
   const {
     flatScores,
     flatTrue,
@@ -37,26 +37,18 @@ const Metrics = () => {
   } = useMemo(() => {
     if (!data || !Array.isArray(data.results)) {
       return {
-        flatScores: [],
-        flatTrue: [],
-        flatPreds: [],
-        rocData: [],
-        prCurveData: [],
-        prAuc: 0,
-        histData: [],
-        iterData: []
+        flatScores: [], flatTrue: [], flatPreds: [],
+        rocData: [], prCurveData: [], prAuc: 0,
+        histData: [], iterData: []
       };
     }
 
-    let flatScores = [],
-        flatTrue   = [],
-        flatPreds  = [];
+    // (same flattening + roc/pr/hist/iter logic as before)
+    let flatScores = [], flatTrue = [], flatPreds = [];
 
-    // Score or Detailed mode: use raw score curve
     if (data.output_type === 'score' || data.output_type === 'detailed') {
       flatScores = data.results.flatMap(r => r.scores);
       flatTrue   = data.results.flatMap(r => r.scores.map(() => r.gold_binary ? 1 : 0));
-
       const unique     = Array.from(new Set(flatScores)).sort((a, b) => b - a);
       const maxScore   = unique[0] ?? 0;
       const minScore   = unique[unique.length - 1] ?? 0;
@@ -92,7 +84,6 @@ const Metrics = () => {
         const recall    = tp / (tp + fn) || 0;
         return { recall, precision };
       }).sort((a, b) => a.recall - b.recall);
-
       const prAuc = prCurveData.reduce((area, curr, i, arr) => {
         const prev = arr[i - 1] ?? curr;
         return area + ((curr.recall - prev.recall) * (curr.precision + prev.precision) / 2);
@@ -112,7 +103,6 @@ const Metrics = () => {
       return { flatScores, flatTrue, flatPreds: [], rocData, prCurveData, prAuc, histData, iterData };
     }
 
-    // Binary mode: one prediction per item
     if (data.output_type === 'binary') {
       flatTrue  = data.results.map(r => r.gold_binary ? 1 : 0);
       flatPreds = data.results.map(r => {
@@ -135,13 +125,17 @@ const Metrics = () => {
 
     return { flatScores: [], flatTrue: [], flatPreds: [], rocData: [], prCurveData: [], prAuc: 0, histData: [], iterData: [] };
   }, [data]);
-
+  
   const { prfData, confusion } = useMemo(() => {
+    // If Firestore picked up a confusion matrix for binary mode, use it directly:
     if (data.output_type === 'binary' && data.confusion_matrix) {
       const { TP, FP, FN, TN } = data.confusion_matrix;
+      // precision/recall here are already for the “Fake” class (False)
       const precision = TP / (TP + FP) || 0;
       const recall    = TP / (TP + FN) || 0;
-      const f1        = (precision + recall) ? 2 * precision * recall / (precision + recall) : 0;
+      const f1        = (precision + recall)
+        ? 2 * precision * recall / (precision + recall)
+        : 0;
       return {
         prfData: [
           { name: 'Precision', value: precision },
@@ -151,40 +145,51 @@ const Metrics = () => {
         confusion: { TP, FP, FN, TN }
       };
     }
-
-    let tp = 0, fp = 0, tn = 0, fn = 0;
+  
+    // Otherwise, recompute manually but treating “Fake” (false) as positive:
+    let TP = 0, FP = 0, TN = 0, FN = 0;
+  
     if (data.output_type === 'binary') {
-      flatPreds.forEach((pred, i) => {
-        const gt = flatTrue[i];
-        if      (pred && gt ) tp++;
-        else if (pred && !gt) fp++;
-        else if (!pred && !gt) tn++;
-        else if (!pred && gt ) fn++;
+      // Majority‐vote per statement
+      data.results.forEach(r => {
+        const vote = r.scores.filter(v => v >= 0.5).length > r.scores.length / 2;
+        const predFake = !vote;
+        const gtFake   = !r.gold_binary;
+        if      (predFake && gtFake) TP++;
+        else if (predFake && !gtFake) FP++;
+        else if (!predFake && !gtFake) TN++;
+        else if (!predFake && gtFake) FN++;
       });
     } else {
-      flatScores.forEach((sc, i) => {
-        const pred = sc >= threshold;
-        const gt   = flatTrue[i];
-        if      (pred && gt ) tp++;
-        else if (pred && !gt) fp++;
-        else if (!pred && !gt) tn++;
-        else if (!pred && gt ) fn++;
+      // Score/detailed: one thresholded entry per individual score
+      data.results.forEach(r => {
+        r.scores.forEach(sc => {
+          const vote     = sc >= threshold;
+          const predFake = !vote;
+          const gtFake   = !r.gold_binary;
+          if      (predFake && gtFake) TP++;
+          else if (predFake && !gtFake) FP++;
+          else if (!predFake && !gtFake) TN++;
+          else if (!predFake && gtFake) FN++;
+        });
       });
     }
-
-    const precision = tp / (tp + fp) || 0;
-    const recall    = tp / (tp + fn) || 0;
-    const f1        = (precision + recall) ? 2 * precision * recall / (precision + recall) : 0;
-
+  
+    const precision = TP / (TP + FP) || 0;
+    const recall    = TP / (TP + FN) || 0;
+    const f1        = (precision + recall)
+      ? 2 * precision * recall / (precision + recall)
+      : 0;
+  
     return {
       prfData: [
         { name: 'Precision', value: precision },
         { name: 'Recall',    value: recall    },
         { name: 'F1-score',  value: f1        }
       ],
-      confusion: { TP: tp, FP: fp, FN: fn, TN: tn }
+      confusion: { TP, FP, FN, TN }
     };
-  }, [data.confusion_matrix, threshold, flatScores, flatPreds, flatTrue, data.output_type]);
+  }, [data, threshold]);
 
   if (!data || !Array.isArray(data.results)) {
     return (
@@ -221,7 +226,7 @@ const Metrics = () => {
         </BarChart>
 
         {isScoreMode && (
-          <> 
+          <>
             {/* Threshold Slider */}
             <Box my={2}>
               <Typography gutterBottom>
@@ -237,17 +242,23 @@ const Metrics = () => {
                 marks
               />
             </Box>
+
+            {/* PR Curve image */}
             <Box mt={2} mb={4}>
               <Typography variant="subtitle1">
                 PR AUC: {(prAuc * 100).toFixed(2)}%
               </Typography>
-              <LineChart width={500} height={250} data={prCurveData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="recall" domain={[0,1]} tickFormatter={t => `${(t*100).toFixed(0)}%`} />
-                <YAxis dataKey="precision" domain={[0,1]} tickFormatter={t => `${(t*100).toFixed(0)}%`} />
-                <Tooltip formatter={v => `${(v*100).toFixed(1)}%`} />
-                <Line type="monotone" dataKey="precision" dot={false} />
-              </LineChart>
+              {loadingPlots ? (
+                <CircularProgress />
+              ) : plotError ? (
+                <Typography color="error">Failed to load PR curve.</Typography>
+              ) : (
+                <img
+                  src={`data:image/png;base64,${plotImages.pr_auc_curve}`}
+                  alt="Precision–Recall Curve"
+                  style={{ maxWidth: '100%' }}
+                />
+              )}
             </Box>
           </>
         )}
@@ -255,17 +266,21 @@ const Metrics = () => {
         <Divider sx={{ my: 4 }} />
 
         <Box display="flex" gap={4} flexWrap="wrap" justifyContent="space-between">
-          {/* ROC Curve */}
+          {/* ROC Curve image */}
           <Box flex="1 1 48%">
             <Typography variant="h6" gutterBottom>ROC Curve</Typography>
             {isScoreMode ? (
-              <LineChart width={400} height={250} data={rocData} margin={{ top: 10, right: 20, left: 0, bottom: 10 }}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="fpr" domain={[0,1]} tickFormatter={t => `${(t*100).toFixed(0)}%`} />
-                <YAxis dataKey="tpr" domain={[0,1]} tickFormatter={t => `${(t*100).toFixed(0)}%`} />
-                <Tooltip formatter={v => `${(v*100).toFixed(1)}%`} />
-                <Line type="monotone" dataKey="tpr" dot={false} />
-              </LineChart>
+              loadingPlots ? (
+                <CircularProgress />
+              ) : plotError ? (
+                <Typography color="error">Failed to load ROC curve.</Typography>
+              ) : (
+                <img
+                  src={`data:image/png;base64,${plotImages.roc_curve}`}
+                  alt="ROC Curve"
+                  style={{ maxWidth: '100%' }}
+                />
+              )
             ) : (
               <Typography color="textSecondary">Not available in binary mode.</Typography>
             )}

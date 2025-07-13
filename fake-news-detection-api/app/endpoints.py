@@ -11,14 +11,14 @@ from app.classification_service import ClassificationService
 from app.benchmark_service import BenchmarkService
 from firebase_admin import firestore
 from app.firebase import db
+from app.plot_service import PlotService
 
 # --- Instantiate core components ---
 llm = LLMManager()
 serp = SerpAgent()
 classifier = ClassificationService(llm, serp)
-
 benchmarker = BenchmarkService(classifier, db)
-
+plotter = PlotService(db)
 router = APIRouter()
 
 class PostData(BaseModel):
@@ -139,3 +139,17 @@ async def get_benchmark(benchmark_id: str):
         "results": results,
         "id":      benchmark_id,
     }
+
+@router.get("/benchmark/{benchmark_id}/plots", dependencies=[Depends(get_current_user)])
+async def benchmark_plots(benchmark_id: str):
+    """
+    Returns base64-encoded PNGs for ROC and PR curves of the given benchmark.
+    """
+    try:
+        payload = plotter.generate_plots(benchmark_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Benchmark not found or no results available")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Plot generation failed: {e}")
+
+    return payload

@@ -77,41 +77,52 @@ class BenchmarkService:
             "correctness": corrects,
         }
 
-    def _compute_metrics(self, results, iterations):
-        all_gold, all_pred, all_scores = [], [], []
+    def _compute_metrics(self, results, iterations, output_type):
+        # compute iteration-level accuracy
         iter_corr = [0] * iterations
         iter_tot  = [0] * iterations
 
         for r in results:
-            gold = r["gold_binary"]     # False = Fake, True = TrueNews
-            for i, (p, s, c) in enumerate(zip(r["predictions"], r["scores"], r["correctness"])):
-                all_gold.append(gold)
-                all_pred.append(p)
-                all_scores.append(s)
+            for i, c in enumerate(r["correctness"]):
                 iter_tot[i]  += 1
                 iter_corr[i] += int(c)
 
+        # build y_true / y_pred / all_scores exactly as the UI does
+        if output_type in ("score", "detailed"):
+            # one entry per individual score
+            y_true     = [r["gold_binary"] for r in results for _ in r["scores"]]
+            y_pred     = [s >= 0.5           for r in results for s in r["scores"]]
+            all_scores = [s                  for r in results for s in r["scores"]]
+        else:
+            # binary: majority vote per statement
+            y_true     = [r["gold_binary"] for r in results]
+            y_pred     = [
+                sum(r["predictions"]) > len(r["predictions"]) / 2
+                for r in results
+            ]
+            # histogram still uses individual scores
+            all_scores = [s for r in results for s in r["scores"]]
+
         try:
-            # labels=[False, True] sorgt dafür, dass Zeile 0 = Actual False = Fake,
-            # Zeile 1 = Actual True = TrueNews ist.
-            cm = confusion_matrix(all_gold, all_pred, labels=[False, True])
-            # cm = [[TP_fake, FN_fake],
-            #       [FP_true, TN_true]]
-            tp = int(cm[0, 0])  # echte Fakes korrekt als Fake
-            fn = int(cm[0, 1])  # echte Fakes fälschlich als TrueNews
-            fp = int(cm[1, 0])  # echte TrueNews fälschlich als Fake
-            tn = int(cm[1, 1])  # echte TrueNews korrekt als TrueNews
+            # labels=[False, True] ensures row0=Actual False (Fake), row1=Actual True
+            cm = confusion_matrix(y_true, y_pred, labels=[False, True])
+            tp = int(cm[0, 0])  # Fake correctly identified as Fake
+            fn = int(cm[0, 1])  # Fake misclassified as TrueNews
+            fp = int(cm[1, 0])  # TrueNews misclassified as Fake
+            tn = int(cm[1, 1])  # TrueNews correctly identified
         except Exception:
             tp = fn = fp = tn = 0
 
-        # Wir nehmen pos_label=False, weil False (= Fake) unsere positive Klasse ist.
-        precision = precision_score(all_gold, all_pred, pos_label=False, zero_division=0)
-        recall    = recall_score(all_gold, all_pred, pos_label=False, zero_division=0)
-        f1        = f1_score(all_gold, all_pred, pos_label=False, zero_division=0)
+        precision = precision_score(y_true, y_pred, pos_label=False, zero_division=0)
+        recall    = recall_score(y_true, y_pred, pos_label=False, zero_division=0)
+        f1        = f1_score(y_true, y_pred, pos_label=False, zero_division=0)
 
         hist_counts, hist_edges = np.histogram(all_scores, bins=10, range=(0.0, 1.0))
-        total = len(all_gold)
-        acc_overall = sum(int(g == p) for g, p in zip(all_gold, all_pred)) / total if total else 0.0
+        total = len(y_true)
+        acc_overall = (
+            sum(int(gt == pred) for gt, pred in zip(y_true, y_pred)) / total
+            if total else 0.0
+        )
 
         return {
             "accuracy":           acc_overall,
@@ -119,12 +130,17 @@ class BenchmarkService:
             "recall":             recall,
             "f1_score":           f1,
             "confusion_matrix":   {"TP": tp, "FP": fp, "FN": fn, "TN": tn},
-            "score_histogram":    {"bin_edges": hist_edges.tolist(), "counts": hist_counts.tolist()},
-            "iteration_accuracy": [ (iter_corr[i] / iter_tot[i]) if iter_tot[i] else 0.0
-                                    for i in range(iterations) ],
+            "score_histogram":    {
+                "bin_edges": hist_edges.tolist(),
+                "counts":    hist_counts.tolist()
+            },
+            "iteration_accuracy": [
+                (iter_corr[i] / iter_tot[i]) if iter_tot[i] else 0.0
+                for i in range(iterations)
+            ],
             "total_predictions":  total,
         }
-    
+
     def _save_to_firestore(self, job_id, params, summary, results):
         doc = self.db.collection("benchmarks").document(job_id)
         doc.set({
@@ -138,12 +154,20 @@ class BenchmarkService:
         batch.commit()
         logger.info(f"Benchmark {job_id} gespeichert.")
 
-    def run(self, csv_path: str, use_external: bool, variant: str, output: str, iterations: int, model: str, job_id: str):
+    def run(
+        self,
+        csv_path: str,
+        use_external: bool,
+        variant: str,
+        output: str,
+        iterations: int,
+        model: str,
+        job_id: str
+    ):
         start = time.time()
         self.classifier.llm.set_model(model)
         self.classifier.serp.set_model(model)
 
-        # 1) Override your LLM & SerpAgent models for this run
         logger.info(f"Starting benchmark {job_id} using LLM model '{model}'")
         self.classifier.llm.extract_model   = model
         self.classifier.llm.classify_model  = model
@@ -156,7 +180,6 @@ class BenchmarkService:
             logger.error("Keine gültigen Zeilen in CSV.")
             return
 
-        # Modelle mit ins DB-Dokument
         model_params = {
             "extract_model":   self.classifier.llm.extract_model,
             "classify_model":  self.classifier.llm.classify_model,
@@ -173,22 +196,26 @@ class BenchmarkService:
             "iterations":        iterations
         }
 
-        # Parallele Klassifikation
         with ThreadPoolExecutor(max_workers=min(32, len(df))) as exec:
             futures = {
-                exec.submit(self._classify_row, idx, row, use_external, variant, output, iterations): idx
+                exec.submit(
+                    self._classify_row,
+                    idx, row,
+                    use_external, variant, output, iterations
+                ): idx
                 for idx, row in df.iterrows()
             }
-            results = [f.result() for f in as_completed(futures) if f.result() is not None]
+            results = [
+                f.result()
+                for f in as_completed(futures)
+                if f.result() is not None
+            ]
 
-        # Metriken berechnen
-        summary = self._compute_metrics(results, iterations)
+        # compute metrics using the UI‐aligned logic
+        summary = self._compute_metrics(results, iterations, output)
 
-        # Dauer hinzufügen
-        duration = time.time() - start
-        summary["duration_seconds"] = duration
+        summary["duration_seconds"] = time.time() - start
 
-        # In Firestore speichern
         self._save_to_firestore(job_id, params, summary, results)
 
         try:
