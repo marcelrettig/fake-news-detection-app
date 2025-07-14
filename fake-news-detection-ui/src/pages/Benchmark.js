@@ -306,12 +306,23 @@ export default function Benchmark() {
                 ))}
               </Select>
             </FormControl>
+
             <Button
               variant="outlined"
               onClick={handleLoadSaved}
               disabled={!selectedRunId || loadingSaved}
             >
               {loadingSaved ? <CircularProgress size={20} /> : 'Load'}
+            </Button>
+
+            {/* push the Compare button to the far right */}
+            <Box sx={{ flexGrow: 1 }} />
+
+            <Button
+              variant="text"
+              onClick={() => navigate('/metrics/compare')}
+            >
+              Compare Benchmarks
             </Button>
           </Box>
         </Paper>

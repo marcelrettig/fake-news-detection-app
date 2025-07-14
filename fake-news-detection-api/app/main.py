@@ -2,6 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.endpoints import router as api_router
 
+
 app = FastAPI(
     title="Fake News Detection API",
     description="Backend for Fake News Detection integrating LLM logic and real news article functions.",

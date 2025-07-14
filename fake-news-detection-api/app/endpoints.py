@@ -153,3 +153,20 @@ async def benchmark_plots(benchmark_id: str):
         raise HTTPException(status_code=500, detail=f"Plot generation failed: {e}")
 
     return payload
+
+@router.get("/benchmarks/compare", dependencies=[Depends(get_current_user)])
+async def compare_benchmarks( ids: str ):
+    """
+    Query param `ids` is a comma-separated list of 1–3 benchmark IDs.
+    Returns two base64 PNGs: roc_comparison & pr_comparison.
+    """
+    ids_list = [i.strip() for i in ids.split(",") if i.strip()]
+    if not 1 <= len(ids_list) <= 3:
+        raise HTTPException(400, "Please provide between 1 and 3 benchmark IDs")
+    try:
+        imgs = plotter.generate_comparison_plots(ids_list)
+    except KeyError as e:
+        raise HTTPException(404, str(e))
+    except Exception as e:
+        raise HTTPException(500, f"Comparison plot failed: {e}")
+    return imgs

@@ -7,6 +7,8 @@ import About from './pages/About';
 import Benchmark from './pages/Benchmark';
 import Metrics from './pages/Metrics';
 import Login from './pages/Login';
+import CompareMetrics from './pages/CompareMetrics';
+
 
 function App() {
   return (
@@ -23,6 +25,7 @@ function App() {
           <Route path="/about" element={<About />} />
           <Route path="/benchmark" element={<Benchmark />} />
           <Route path="/metrics" element={<Metrics />} />
+          <Route path="/metrics/compare" element={<CompareMetrics />} />
           { /* catch-all: redirect unknown URLs back to home */ }
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
