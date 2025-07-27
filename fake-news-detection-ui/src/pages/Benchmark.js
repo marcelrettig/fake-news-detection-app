@@ -238,16 +238,13 @@ export default function Benchmark() {
               <Button
                 variant="contained"
                 color="secondary"
-                onClick={() => navigate('/metrics', {
-                  state: {
-                    metrics: result,
-                    plotImages,
-                    loadingPlots,
-                    plotError
-                  }
-                })}
+                onClick={() =>
+                  navigate('/metrics', {
+                    state: { metrics: result, plotImages, loadingPlots, plotError }
+                  })
+                }
               >
-                View Detailed Metrics
+                View Metrics
               </Button>
             </Box>
           </>
@@ -357,14 +354,19 @@ export default function Benchmark() {
                   <MenuItem value="short">Short</MenuItem>
                 </Select>
               </FormControl>
-              <FormControl sx={{ minWidth:140 }} size="small">
-                <InputLabel>Output Type</InputLabel>
-                <Select value={outputType} label="Output Type" onChange={e => setOutputType(e.target.value)}>
-                  <MenuItem value="score">Score</MenuItem>
-                  <MenuItem value="binary">Binary</MenuItem>
-                  <MenuItem value="detailed">Detailed</MenuItem>
-                </Select>
-              </FormControl>
+              <FormControl sx={{ minWidth: 200 }} size="small">
+              <InputLabel>Output Type</InputLabel>
+              <Select
+                value={outputType}
+                label="Output Type"
+                onChange={e => setOutputType(e.target.value)}
+              >
+                <MenuItem value="binary">Binary</MenuItem>
+                <MenuItem value="score">Score</MenuItem>
+                <MenuItem value="binary_expl">Binary + Explanation</MenuItem>
+                <MenuItem value="score_expl">Score + Explanation</MenuItem>
+              </Select>
+            </FormControl>
               <TextField
                 label="Iterations"
                 type="number"

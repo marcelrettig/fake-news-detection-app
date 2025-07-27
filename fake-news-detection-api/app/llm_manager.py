@@ -85,133 +85,529 @@ class LLMManager:
             system_content = "You are a fact-checking assistant."
             if prompt_variant == "short":
                 if output_type == "binary":
-                    user_content = (
-                        f"Claim: \"{post}\"\n"
-                        "Is this statement true or false?\n"
-                        "Respond with only \"True\" or \"False.\""
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim, decide if it is true or false, using both the claim and your internal knowledge.\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
                     )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Is the claim true or false, using both the claim and your own knowledge?\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
+                    )
+
                 elif output_type == "score":
-                    user_content = (
-                        f"Claim: \"{post}\"\n"
-                        "On a scale from 0 (definitely false) to 1 (definitely true), how truthful is this?\n"
-                        "Respond with only a number between 0 and 1."
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim, rate how true it is from 0 (false) to 1 (true), using both the claim and your internal knowledge.\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>\n"
+                        "}\n"
                     )
-                else:  # detailed
+
                     user_content = (
-                        f"Claim: \"{post}\"\n"
-                        "Provide:\n"
-                        "1. A verdict (\"True\" or \"False\")\n"
-                        "2. A brief explanation (2–3 sentences)."
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "How well does your knowledge support the claim? Rate from 0 (false) to 1 (true), and reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>\n"
+                        "}\n"
                     )
+
+                elif output_type == "binary_expl":
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim, decide if it is true or false, using both the claim and your internal knowledge.\n"
+                        "Explain your reasoning, then respond ONLY in this format:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Decide if the claim is true or false using both the information in the claim and your own knowledge.\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                elif output_type == "score_expl":
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim, rate how true it is from 0 (false) to 1 (true), using both the claim and your internal knowledge.\n"
+                        "Explain your reasoning, then reply ONLY with this JSON:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Rate, from 0 (completely false) to 1 (completely true), how well your knowledge supports the claim.\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
             else:
                 # Default (long) prompts without external data
                 if output_type == "binary":
                     system_content = (
-                        "You are a fact‑checking assistant. Evaluate the veracity of the following claim "
-                        "using your internal knowledge and publicly available data."
-                    )
-                    user_content = (
-                        f"Claim: \"{post}\"\n\n"
-                        "Task: Decide if the claim is true or false.\n\n"
-                        "Output format (exact):\n"
-                        "{\n  \"verdict\": \"True\" | \"False\"\n}\n"
-                        "Do not include any other fields."
-                    )
-                elif output_type == "score":
-                    system_content = "You are a fact‑checking assistant. Assess the credibility of the following claim."
-                    user_content = (
-                        f"Claim: \"{post}\"\n\n"
-                        "Task: Assign a confidence score between 0 (definitely false) and 1 (definitely true).\n\n"
-                        "Output format (exact):\n"
-                        "{\n  \"score\": 0.00-1.00\n}\n"
-                        "Do not include any other fields or text."
-                    )
-                else:  # detailed
-                    system_content = (
-                        "You are a fact‑checking assistant. Analyze the following claim, determine its truthfulness, "
-                        "and explain your reasoning."
-                    )
-                    user_content = (
-                        f"Claim: \"{post}\"\n\n"
-                        "Task: Provide a JSON with:\n"
-                        "1. verdict: \"True\" or \"False\",\n"
-                        "2. score: confidence (0.00–1.00),\n"
-                        "3. explanation: a short paragraph citing reliable knowledge.\n\n"
-                        "Output format (exact):\n"
+                        "You are an expert fact-checking assistant.\n"
+                        "Your task is to analyze a given claim, using both the information in the claim and your own internal knowledge and data.\n"
+                        "Apply logical reasoning and your knowledge base to determine whether the claim is true or false.\n"
+                        "Do not include any explanation; only output the binary verdict as an exact JSON in the format below.\n"
+                        "\n"
+                        "Your response must follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
                         "{\n"
-                        "  \"verdict\": \"True\" | \"False\",\n"
-                        "  \"score\": 0.00-1.00,\n"
-                        "  \"explanation\": \"…\"\n"
-                        "}"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
                     )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Analyze the claim using both its contents and your internal knowledge and data.\n"
+                        "Decide if it is true or false and reply ONLY in the following exact JSON format (without any explanation):\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
+                    )
+
+                    
+                elif output_type == "score":
+                    system_content = (
+                        "You are an expert fact-checking assistant.\n"
+                        "Your task is to analyze a given claim, using both the information in the claim and your internal knowledge and data.\n"
+                        "Based on logical reasoning and your knowledge, provide a score from 0 (completely false) to 1 (completely true) for how well the claim aligns with reality.\n"
+                        "Do not include any explanation; only output the score as an exact JSON in the format below.\n"
+                        "\n"
+                        "Your response must follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"score\": <float between 0 and 1>\n"
+                        "}\n"
+                    )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Analyze the claim using both its contents and your internal knowledge and data.\n"
+                        "Rate, from 0 (completely false) to 1 (completely true), how well your knowledge supports the claim, and reply ONLY in the following exact JSON format (without any explanation):\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"score\": <float between 0 and 1>\n"
+                        "}\n"
+                    )
+
+                elif output_type == "binary_expl":
+                    system_content = (
+                        "You are an expert fact-checking assistant.\n"
+                        "Your job is to analyze a given claim, using both the content of the claim and your own internal knowledge and data.\n"
+                        "Using logical reasoning, you must:\n"
+                        "\n"
+                        "- Carefully read and interpret the claim.\n"
+                        "- Assess the plausibility and accuracy of the claim based on what is stated and what you already know.\n"
+                        "- Break down your reasoning step by step, drawing on both the claim and your internal knowledge of facts, concepts, and commonly available data.\n"
+                        "- Do not fabricate evidence, but use your knowledge base to supplement and check the claim's validity.\n"
+                        "- After your reasoning, output your decision as an exact JSON with:\n"
+                        "  - A binary verdict: \"True\" if the claim is accurate and plausible given your knowledge, \"False\" if not.\n"
+                        "  - A clear, concise explanation of your reasoning and how you arrived at your verdict.\n"
+                        "\n"
+                        "Your response should strictly follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                        )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Analyze the claim using both the information explicitly given and your own internal knowledge and data.\n"
+                        "\n"
+                        "- Think through each step logically:\n"
+                        "  - Identify the main assertion(s) in the claim.\n"
+                        "  - Evaluate whether the claim is accurate, plausible, and consistent, using both the content of the claim and your knowledge base.\n"
+                        "  - Clearly state what knowledge or data you are relying on, in addition to what is in the claim itself.\n"
+                        "  - Conclude if the claim is correct (True) or incorrect (False).\n"
+                        "\n"
+                        "At the end, output your answer in the following exact JSON format ONLY:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                        "\n"
+                        "Replace \"…\" with your reasoning and the knowledge or evidence (from both the claim and your internal data) that led to your verdict. Do NOT include any information outside this JSON.\n"
+                    )
+
+                elif output_type == "score_expl":
+                    system_content = (
+                        "You are an expert fact-checking assistant.\n"
+                        "Your job is to analyze a given claim, using both the content of the claim and your own internal knowledge and data.\n"
+                        "Using logical reasoning, you must:\n"
+                        "\n"
+                        "- Carefully read and interpret the claim.\n"
+                        "- Assess the plausibility and accuracy of the claim based on what is stated and what you already know.\n"
+                        "- Break down your reasoning step by step, drawing on both the claim and your internal knowledge of facts, concepts, and commonly available data.\n"
+                        "- Do not fabricate evidence, but use your knowledge base to supplement and check the claim's validity.\n"
+                        "- After your reasoning, output your decision as an exact JSON with:\n"
+                        "  - A score from 0 (completely false) to 1 (completely true), reflecting how well the claim aligns with your knowledge and the information provided.\n"
+                        "  - A clear, concise explanation of your reasoning and how you arrived at your score.\n"
+                        "\n"
+                        "Your response should strictly follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"score\": <float between 0 and 1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Analyze the claim using both the information explicitly given and your own internal knowledge and data.\n"
+                        "\n"
+                        "- Think through each step logically:\n"
+                        "  - Identify the main assertion(s) in the claim.\n"
+                        "  - Evaluate whether the claim is accurate, plausible, and consistent, using both the content of the claim and your knowledge base.\n"
+                        "  - Clearly state what knowledge or data you are relying on, in addition to what is in the claim itself.\n"
+                        "  - Decide, on a scale from 0 (completely false) to 1 (completely true), how well your knowledge supports the claim.\n"
+                        "\n"
+                        "At the end, output your answer in the following exact JSON format ONLY:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"score\": <float between 0 and 1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                        "\n"
+                        "Replace \"…\" with your reasoning and the knowledge or evidence (from both the claim and your internal data) that led to your score. Do NOT include any information outside this JSON.\n"
+                    )
+
         else:
             # With external articles
             system_content = "You are a fact‑checking assistant."
             if prompt_variant == "short":
                 if output_type == "binary":
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim and articles from trusted sources, decide if the claim is true or false.\n"
+                        "Use only information from the articles.\n"
+                        "Respond ONLY with this JSON:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
+                    )
                     user_content = (
-                        f"Based on the following articles, answer ONLY with 'True' if the post is mostly correct, "
-                        "or 'False' if it is mostly incorrect.\n\n"
-                        f"Post: \"{post}\"\n\n"
-                        f"Articles:\n{articles_block}"
+                        "Claim:\n"
+                        f"\"{post}\"\n"
+                        "\n"
+                        "Articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Decide if the claim is true or false, using only these articles.\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
                     )
                 elif output_type == "score":
-                    user_content = (
-                        f"Article:\n{articles_block}\n"
-                        f"Claim: \"{post}\"\n"
-                        "Based on the article, rate the truthfulness from 0.00 (definitely false) to 1.00 (definitely true).\n"
-                        "Respond with only a number between 0.00 and 1.00"
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim and articles from trusted sources, rate support for the claim.\n"
+                        "Use only information from the articles.\n"
+                        "Respond ONLY with this JSON:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>\n"
+                        "}\n"
                     )
-                else:  # detailed
+
                     user_content = (
-                        f"Article:\n{articles_block}\n"
-                        f"Claim: \"{post}\"\n"
-                        "Provide:\n"
-                        "1. Verdict (\"True\" or \"False\")\n"
-                        "2. A concise explanation citing the article."
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Rate, from 0 (completely false) to 1 (completely true), how well the articles support the claim.\n"
+                        "Reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>\n"
+                        "}\n"
                     )
+                elif output_type == "binary_expl":
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim and articles from trusted sources, decide if the claim is true or false.\n"
+                        "Use only information from the articles.\n"
+                        "Explain your reasoning step-by-step.\n"
+                        "Respond ONLY with this JSON:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n"
+                        "\n"
+                        "Articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Decide if the claim is true or false, using only these articles.\n"
+                        "Reason step by step, then reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                elif output_type == "score_expl":
+                    system_content = (
+                        "You are a fact-checking assistant.\n"
+                        "Given a claim and articles from trusted sources, rate support for the claim.\n"
+                        "Use only information from the articles.\n"
+                        "Explain your reasoning step-by-step.\n"
+                        "Respond ONLY with this JSON:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Rate, from 0 (completely false) to 1 (completely true), how well the articles support the claim.\n"
+                        "Reason step by step, then reply ONLY in this JSON format:\n"
+                        "{\n"
+                        "  \"score\": <float 0-1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
             else:
                 # Default (long) prompts with external data
                 if output_type == "binary":
                     system_content = (
-                        "You are a fact‑checking assistant. Use only the provided article to judge the claim’s accuracy."
+                        "You are an expert fact-checking assistant. Your job is to analyze a given claim and a set of articles from trusted news sources about the claim. Using logical reasoning, you must:\n"
+                        "\n"
+                        "- Carefully read and compare the claim to the information in the articles.\n"
+                        "- Base your decision strictly on the information present in the articles.\n"
+                        "- Break down your reasoning step by step, noting if the articles confirm, contradict, or ignore the claim.\n"
+                        "- Avoid any speculation or information not present in the provided sources.\n"
+                        "- After reasoning, output an exact JSON with:\n"
+                        "  - A binary verdict: \"True\" if the claim is verified by the articles, \"False\" if not.\n"
+                        "\n"
+                        "Your response should strictly follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
                     )
                     user_content = (
-                        f"Article:\n{articles_block}\n\n"
-                        f"Claim: \"{post}\"\n\n"
-                        "Task: Decide if the claim is true or false based solely on the article.\n\n"
-                        "Output format (exact):\n"
-                        "{\n  \"verdict\": \"True\" | \"False\"\n}\n"
-                        "No additional commentary."
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Related articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Analyze the claim using only the information in the provided articles.\n"
+                        "\n"
+                        "- Think through each step logically:\n"
+                        "  - Identify the main factual assertion of the claim.\n"
+                        "  - Check if the articles support, contradict, or provide no relevant info for the claim.\n"
+                        "  - Assess the credibility and consistency of evidence across sources.\n"
+                        "  - Conclude whether the claim is verified (True) or refuted (False).\n"
+                        "\n"
+                        "At the end, output your answer in the following exact JSON format ONLY (without any explanation):\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\"\n"
+                        "}\n"
+                        "\n"
+                        "Do NOT include any information outside this JSON.\n"
                     )
                 elif output_type == "score":
                     system_content = (
-                        "You are a fact‑checking assistant. Based solely on the article below, rate how likely the claim is true."
-                    )
-                    user_content = (
-                        f"Article:\n{articles_block}\n\n"
-                        f"Claim: \"{post}\"\n\n"
-                        "Task: Provide a confidence score between 0.00 (definitely false) and 1.00 (definitely true).\n\n"
-                        "Output format (exact):\n"
-                        "{\n  \"score\": 0.00-1.00\n}\n"
-                        "No extra text."
-                    )
-                else:  # detailed
-                    system_content = (
-                        "You are a fact‑checking assistant. Read the article and then evaluate the claim. Your answer must be based only on the article’s content."
-                    )
-                    user_content = (
-                        f"Article:\n{articles_block}\n\n"
-                        f"Claim: \"{post}\"\n\n"
-                        "Task: Return a JSON with:\n"
-                        "- score: (0.00-1.00) where 0.00 is definitely false and 1.00 is definitely true\n"
-                        "- explanation: 2–3 sentences citing specific lines or data from the article.\n\n"
-                        "Output format (exact):\n"
+                        "You are an expert fact-checking assistant. Your job is to analyze a claim and a set of articles from trusted news sources about the claim. Using logical reasoning, you must:\n"
+                        "\n"
+                        "- Carefully read and compare the claim to the information in the articles.\n"
+                        "- Base your decision strictly on the information present in the articles.\n"
+                        "- Break down your reasoning step by step, noting if the articles confirm, contradict, or ignore the claim.\n"
+                        "- Avoid any speculation or information not present in the provided sources.\n"
+                        "- After reasoning, output an exact JSON with:\n"
+                        "  - A score from 0 (completely false) to 1 (completely true), reflecting how well the claim is supported by the articles.\n"
+                        "\n"
+                        "Your response should strictly follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
                         "{\n"
-                        "  \"score\": 0.00-1.00,\n"
-                        "  \"explanation\": \"…\"\n"
-                        "}"
+                        "  \"score\": <float between 0 and 1>\n"
+                        "}\n"
                     )
+                    
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Related articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Analyze the claim using only the information in the provided articles.\n"
+                        "\n"
+                        "- Think through each step logically:\n"
+                        "  - Identify the main factual assertion of the claim.\n"
+                        "  - Check if the articles support, contradict, or provide no relevant info for the claim.\n"
+                        "  - Assess the credibility and consistency of evidence across sources.\n"
+                        "  - Decide, on a scale from 0 (completely false) to 1 (completely true), how well these sources support the claim.\n"
+                        "\n"
+                        "At the end, output your answer in the following exact JSON format ONLY (without any explanation):\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"score\": <float between 0 and 1>\n"
+                        "}\n"
+                        "\n"
+                        "Do NOT include any information outside this JSON.\n"
+                    )
+                elif output_type == "binary_expl":
+                    system_content = "You are an expert fact-checking assistant. Your job is to analyze a given claim and a set of articles from trusted news sources about the claim. Using logical reasoning, you must:\n"
+                    "\n"
+                    "- Carefully read and compare the claim to the information in the articles.\n"
+                    "- Base your decision strictly on the information present in the articles.\n"
+                    "- Break down your reasoning step by step, noting if the articles confirm, contradict, or ignore the claim.\n"
+                    "- Avoid any speculation or information not present in the provided sources.\n"
+                    "- After reasoning, output an exact JSON with:\n"
+                    "  - A binary verdict: \"True\" if the claim is verified by the articles, \"False\" if not.\n"
+                    "  - A clear, concise explanation of your reasoning and the evidence used.\n"
+                    "\n"
+                    "Your response should strictly follow this format:\n"
+                    "\n"
+                    "Output (exact JSON):\n"
+                    "{\n"
+                    "  \"verdict\": \"True\"|\"False\",\n"
+                    "  \"explanation\": \"…\"\n"
+                    "}\n"
+
+                    user_content = (
+                        "Claim:\n"
+                        f"\"{post}\"\n\n"
+                        "\n"
+                        "Related articles from trusted sources:\n"
+                        f"\n{articles_block}\n\n"
+                        "\n"
+                        "Analyze the claim using only the information in the provided articles.\n"
+                        "\n"
+                        "- Think through each step logically:\n"
+                        "  - Identify the main factual assertion of the claim.\n"
+                        "  - Check if the articles support, contradict, or provide no relevant info for the claim.\n"
+                        "  - Assess the credibility and consistency of evidence across sources.\n"
+                        "  - Conclude whether the claim is verified (True) or refuted (False).\n"
+                        "\n"
+                        "At the end, output your answer in the following exact JSON format ONLY:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"verdict\": \"True\"|\"False\",\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                        "\n"
+                        "Replace \"…\" with your reasoning and the evidence leading to your verdict. Do NOT include any information outside this JSON.\n"
+                    )
+
+                elif output_type == "score_expl":
+                    system_content = (
+                        "You are an expert fact-checking assistant. Your job is to analyze a claim and a set of articles from trusted news sources about the claim. Using logical reasoning, you must:\n"
+                        "\n"
+                        "- Carefully read and compare the claim to the information in the articles.\n"
+                        "- Base your decision strictly on the information present in the articles.\n"
+                        "- Break down your reasoning step by step, noting if the articles confirm, contradict, or ignore the claim.\n"
+                        "- Avoid any speculation or information not present in the provided sources.\n"
+                        "- After reasoning, output an exact JSON with:\n"
+                        "  - A score from 0 (completely false) to 1 (completely true), reflecting how well the claim is supported by the articles.\n"
+                        "  - A clear, concise explanation of your reasoning and the evidence used.\n"
+                        "\n"
+                        "Your response should strictly follow this format:\n"
+                        "\n"
+                        "Output (exact JSON):\n"
+                        "{\n"
+                        "  \"score\": <float between 0 and 1>,\n"
+                        "  \"explanation\": \"…\"\n"
+                        "}\n"
+                    )
+
+                user_content = (
+                    "Claim:\n"
+                    f"\"{post}\"\n\n"
+                    "\n"
+                    "Related articles from trusted sources:\n"
+                    f"\n{articles_block}\n\n"
+                    "\n"
+                    "Analyze the claim using only the information in the provided articles.\n"
+                    "\n"
+                    "- Think through each step logically:\n"
+                    "  - Identify the main factual assertion of the claim.\n"
+                    "  - Check if the articles support, contradict, or provide no relevant info for the claim.\n"
+                    "  - Assess the credibility and consistency of evidence across sources.\n"
+                    "  - Decide, on a scale from 0 (completely false) to 1 (completely true), how well these sources support the claim.\n"
+                    "\n"
+                    "At the end, output your answer in the following exact JSON format ONLY:\n"
+                    "\n"
+                    "Output (exact JSON):\n"
+                    "{\n"
+                    "  \"score\": <float between 0 and 1>,\n"
+                    "  \"explanation\": \"…\"\n"
+                    "}\n"
+                    "\n"
+                    "Replace \"…\" with your reasoning and the evidence leading to your score. Do NOT include any information outside this JSON.\n"
+                )
+
 
         messages: List[Dict[str, str]] = []
         if system_content:

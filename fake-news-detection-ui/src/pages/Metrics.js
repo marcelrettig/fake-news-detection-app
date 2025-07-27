@@ -7,8 +7,7 @@ import {
   CircularProgress
 } from '@mui/material';
 import {
-  BarChart, Bar, XAxis, YAxis, Tooltip,
-  LineChart, Line
+  BarChart, Bar, XAxis, YAxis, Tooltip, LineChart, Line, LabelList
 } from 'recharts';
 
 const Metrics = () => {
@@ -46,7 +45,7 @@ const Metrics = () => {
     // (same flattening + roc/pr/hist/iter logic as before)
     let flatScores = [], flatTrue = [], flatPreds = [];
 
-    if (data.output_type === 'score' || data.output_type === 'detailed') {
+    if (data.output_type === 'score' || data.output_type === 'score_expl') {
       flatScores = data.results.flatMap(r => r.scores);
       flatTrue   = data.results.flatMap(r => r.scores.map(() => r.gold_binary ? 1 : 0));
       const unique     = Array.from(new Set(flatScores)).sort((a, b) => b - a);
@@ -103,7 +102,7 @@ const Metrics = () => {
       return { flatScores, flatTrue, flatPreds: [], rocData, prCurveData, prAuc, histData, iterData };
     }
 
-    if (data.output_type === 'binary') {
+    if (data.output_type === 'binary' || data.output_type === 'binary_expl') {
       flatTrue  = data.results.map(r => r.gold_binary ? 1 : 0);
       flatPreds = data.results.map(r => {
         const votes = r.scores.filter(v => v >= 0.5).length;
@@ -128,7 +127,7 @@ const Metrics = () => {
   
   const { prfData, confusion } = useMemo(() => {
     // If Firestore picked up a confusion matrix for binary mode, use it directly:
-    if (data.output_type === 'binary' && data.confusion_matrix) {
+    if ((data.output_type === 'binary' || data.output_type === 'binary_expl') && data.confusion_matrix) {
       const { TP, FP, FN, TN } = data.confusion_matrix;
       // precision/recall here are already for the “Fake” class (False)
       const precision = TP / (TP + FP) || 0;
@@ -136,11 +135,15 @@ const Metrics = () => {
       const f1        = (precision + recall)
         ? 2 * precision * recall / (precision + recall)
         : 0;
+      // Only makes sense when true news in dataset, have to update issue!!!
+      const specificity = TN / (TN + FP) || 0;
+      const balanced = (recall + specificity) / 2;
       return {
         prfData: [
           { name: 'Precision', value: precision },
           { name: 'Recall',    value: recall    },
-          { name: 'F1-score',  value: f1        }
+          { name: 'F1-Score',  value: f1        },
+          { name: 'BACC',value: balanced  }
         ],
         confusion: { TP, FP, FN, TN }
       };
@@ -149,7 +152,7 @@ const Metrics = () => {
     // Otherwise, recompute manually but treating “Fake” (false) as positive:
     let TP = 0, FP = 0, TN = 0, FN = 0;
   
-    if (data.output_type === 'binary') {
+    if (data.output_type === 'binary' || data.output_type === 'binary_expl') {
       // Majority‐vote per statement
       data.results.forEach(r => {
         const vote = r.scores.filter(v => v >= 0.5).length > r.scores.length / 2;
@@ -180,12 +183,15 @@ const Metrics = () => {
     const f1        = (precision + recall)
       ? 2 * precision * recall / (precision + recall)
       : 0;
+    const specificity = TN / (TN + FP) || 0;
+    const balanced = (recall + specificity) / 2;
   
     return {
       prfData: [
         { name: 'Precision', value: precision },
         { name: 'Recall',    value: recall    },
-        { name: 'F1-score',  value: f1        }
+        { name: 'F1-Score',  value: f1        },
+        { name: 'BACC',value: balanced  }
       ],
       confusion: { TP, FP, FN, TN }
     };
@@ -200,7 +206,7 @@ const Metrics = () => {
     );
   }
 
-  const isScoreMode = data.output_type === 'score' || data.output_type === 'detailed';
+  const isScoreMode = data.output_type === 'score' || data.output_type === 'score_expl';
 
   return (
     <Container maxWidth="md">
@@ -222,7 +228,14 @@ const Metrics = () => {
           <XAxis dataKey="name" />
           <YAxis domain={[0,1]} tickFormatter={t => `${(t*100).toFixed(0)}%`} />
           <Tooltip formatter={v => `${(v*100).toFixed(1)}%`} />
-          <Bar dataKey="value" />
+          <Bar dataKey="value">
+            <LabelList
+              dataKey="value"
+              position="inside"
+              fill="#ffffff" 
+              formatter={v => `${(v*100).toFixed(1)}%`}
+            />
+          </Bar>
         </BarChart>
 
         {isScoreMode && (

@@ -20,32 +20,41 @@ class BenchmarkService:
         self.classifier = classifier
         self.db = db_client
 
-    def _parse_output(self, raw: str) -> tuple[bool, float]:
-        # Versucht zuerst JSON, fällt bei Fehlern auf Heuristik zurück
-        try:
-            obj = json.loads(raw)
-            score = float(obj.get("score", 0.0))
-            # Wenn überhaupt ein Score da ist, entscheidet der Schwellenwert
-            if "score" in obj:
-                return (score >= 0.5), score
-            # Sonst (z.B. nur verdict-Feld) über das verdict-Feld
-            verdict = obj.get("verdict","").strip().lower() == "true"
-            return verdict, score
-        except Exception:
-            low = raw.lower()
-            if "true" in low and "false" not in low:
-                return True, 1.0
-            if "false" in low and "true" not in low:
-                return False, 0.0
-            m = re.search(r"\b0(?:\.\d+)?|1(?:\.0+)?\b", low)
-            if m:
-                sc = float(m.group(0))
-                return sc >= 0.5, sc
-            return False, 0.0
+    def _parse_output(self, raw: str) -> tuple[bool, float, str]:
+        # 1) Find the first balanced { … } in the raw text
+        m = re.search(r"\{[\s\S]*?\}", raw)
+        if m:
+            json_str = m.group(0)
+            try:
+                obj = json.loads(json_str)
+                # extract score/verdict/explanation
+                score       = float(obj.get("score", 0.0))
+                explanation = obj.get("explanation", "").strip()
+                if "score" in obj:
+                    return (score >= 0.5), score, explanation
+                # otherwise use verdict field
+                verdict = obj.get("verdict", "").strip().lower() == "true"
+                return verdict, score, explanation
+            except json.JSONDecodeError:
+                pass  # fall back to heuristic below
+
+        # 2) Heuristic fallback (no explanation)
+        low = raw.lower()
+        if "true" in low and "false" not in low:
+            return True, 1.0, ""
+        if "false" in low and "true" not in low:
+            return False, 0.0, ""
+        num_match = re.search(r"\b0(?:\.\d+)?|1(?:\.0+)?\b", low)
+        if num_match:
+            sc = float(num_match.group(0))
+            return sc >= 0.5, sc, ""
+        return False, 0.0, ""
 
     def _classify_row(self, idx, row, use_external, variant, output, iterations):
         text = str(row["statement"])
         gold = int(row["label"]) >= 4
+        preds, scores, corrects, explanations = [], [], [], []
+
 
         try:
             query = self.classifier.extract_query(text)
@@ -64,16 +73,19 @@ class BenchmarkService:
                 logger.error(f"Row {idx}, Iter {i}: Klassifikation fehlgeschlagen: {e}")
                 continue
 
-            pred, sc = self._parse_output(raw)
+            pred, sc, expl = self._parse_output(raw)
             preds.append(pred)
             scores.append(sc)
             corrects.append(pred == gold)
+            explanations.append(expl)
+
 
         return {
             "statement": text,
             "gold_binary": gold,
             "predictions": preds,
             "scores": scores,
+            "explanations": explanations,
             "correctness": corrects,
         }
 
@@ -88,7 +100,7 @@ class BenchmarkService:
                 iter_corr[i] += int(c)
 
         # build y_true / y_pred / all_scores exactly as the UI does
-        if output_type in ("score", "detailed"):
+        if output_type in ("score", "score_expl"):
             # one entry per individual score
             y_true     = [r["gold_binary"] for r in results for _ in r["scores"]]
             y_pred     = [s >= 0.5           for r in results for s in r["scores"]]
