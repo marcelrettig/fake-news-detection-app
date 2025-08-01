@@ -211,6 +211,20 @@ export default function Benchmark() {
         </Box>
         <Divider sx={{ my: 2 }} />
 
+        <Box textAlign="center" mt={2}>
+              <Button
+                variant="contained"
+                color="secondary"
+                onClick={() =>
+                  navigate('/metrics', {
+                    state: { metrics: result, plotImages, loadingPlots, plotError }
+                  })
+                }
+              >
+                View Metrics
+              </Button>
+            </Box>
+
         {Array.isArray(result.results) && result.results.length > 0 && (
           <>
             <Typography variant="subtitle2" gutterBottom>Per-Statement Results</Typography>
@@ -233,20 +247,6 @@ export default function Benchmark() {
                 </ListItem>
               ))}
             </List>
-
-            <Box textAlign="center" mt={2}>
-              <Button
-                variant="contained"
-                color="secondary"
-                onClick={() =>
-                  navigate('/metrics', {
-                    state: { metrics: result, plotImages, loadingPlots, plotError }
-                  })
-                }
-              >
-                View Metrics
-              </Button>
-            </Box>
           </>
         )}
       </>
@@ -386,7 +386,7 @@ export default function Benchmark() {
                 >
                   <MenuItem value="gpt-4o">GPT-4o</MenuItem>
                   <MenuItem value="gpt-4">GPT-4</MenuItem>
-                  <MenuItem value="gpt-3.5-turbo">GPT-3.5 Turbo</MenuItem>
+                  <MenuItem value="gpt-o4-mini">GPT-o4 Mini</MenuItem>
                 </Select>
               </FormControl>
             </Box>

@@ -66,7 +66,8 @@ class SerpAgent:
             - Date of publication (if available)
             - Direct link to the article
 
-            Only include results from reputable news outlets (e.g., The New York Times, BBC, Reuters, ScienceDaily, etc.).""",
+            Only include results from reputable news outlets (e.g., The New York Times, BBC, Reuters, Associated Press, ScienceDaily, etc.)
+            Do not include results from opinion based or less trustworthy sites (e.g., Reddit, Quora, YouTube, etc.).""",
             expected_output="A bulleted list of 5–10 reputable news articles with title, source, date, and URL.",
             agent=researcher
         )

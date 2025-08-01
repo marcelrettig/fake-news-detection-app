@@ -18,6 +18,13 @@ const Metrics = () => {
   const data = state.metrics;
   const { plotImages, loadingPlots, plotError } = state;
 
+  const {
+        id,
+        use_external_info: useExternalInfo,
+        output_type: outputType,
+        prompt_variant: promptVariant
+      } = data;
+
   // Slider state for threshold
   const [threshold, setThreshold] = useState(0.5);
   const handleThresholdChange = (_, value) => setThreshold(value);
@@ -214,6 +221,14 @@ const Metrics = () => {
         <Typography variant="h4" align="center" gutterBottom>
           Benchmark Detailed Metrics
         </Typography>
+
+        <Box textAlign="center" mb={3}>
+        <Typography variant="body1"><strong>ID:</strong> {id}</Typography>
+        <Typography variant="body2"><strong>Use External Info:</strong> {useExternalInfo ? 'Yes' : 'No'}</Typography>
+        <Typography variant="body2"><strong>Output Format:</strong> {outputType}</Typography>
+        <Typography variant="body2"><strong>Prompt Variant:</strong> {promptVariant}</Typography>
+      </Box>
+
         <Box textAlign="right" mb={2}>
           <Button variant="outlined" onClick={() => navigate(-1)}>
             Back to Benchmark
@@ -222,7 +237,7 @@ const Metrics = () => {
 
         {/* Precision / Recall / F1 */}
         <Typography variant="h6" gutterBottom>
-          Precision / Recall / F1
+          Precision / Recall / F1 / BACC
         </Typography>
         <BarChart width={500} height={250} data={prfData}>
           <XAxis dataKey="name" />
