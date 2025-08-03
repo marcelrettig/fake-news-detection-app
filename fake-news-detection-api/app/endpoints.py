@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Depends, BackgroundTasks
+from fastapi import APIRouter, HTTPException, File, UploadFile, Form, Depends, BackgroundTasks, Query
 from pydantic import BaseModel, Field
 import uuid
 import shutil
@@ -127,11 +127,25 @@ async def get_benchmark(benchmark_id: str):
     if not snap.exists:
         raise HTTPException(status_code=404, detail="Benchmark not found")
 
-    saved  = snap.to_dict() or {}
-    metrics = saved.get("metrics", {})
-    params  = saved.get("params", {})
+    saved     = snap.to_dict() or {}
+    metrics   = saved.get("metrics", {})
+    params    = saved.get("params", {})
+    results   = [r.to_dict() for r in doc_ref.collection("results").stream()]
 
-    results = [r.to_dict() for r in doc_ref.collection("results").stream()]
+    # Wenn schon eine confusion_matrix da ist, nutzt sie direkt:
+    cm = metrics.get("confusion_matrix")
+    if cm:
+        TP = cm.get("TP", 0)
+        FP = cm.get("FP", 0)
+        FN = cm.get("FN", 0)
+        TN = cm.get("TN", 0)
+        specificity = TN / (TN + FP) if (TN + FP) > 0 else 0.0
+        recall      = metrics.get("recall", 0.0)  # dein gespeicherter Recall
+        balanced_accuracy = (recall + specificity) / 2
+
+        # Fügt die beiden neuen Keys hinzu
+        metrics["specificity"]        = specificity
+        metrics["balanced_accuracy"]  = balanced_accuracy
 
     return {
         **metrics,
@@ -139,6 +153,7 @@ async def get_benchmark(benchmark_id: str):
         "results": results,
         "id":      benchmark_id,
     }
+
 
 @router.get("/benchmark/{benchmark_id}/plots", dependencies=[Depends(get_current_user)])
 async def benchmark_plots(benchmark_id: str):
@@ -155,18 +170,26 @@ async def benchmark_plots(benchmark_id: str):
     return payload
 
 @router.get("/benchmarks/compare", dependencies=[Depends(get_current_user)])
-async def compare_benchmarks( ids: str ):
+async def compare_benchmarks(ids: str):
     """
-    Query param `ids` is a comma-separated list of 1–3 benchmark IDs.
-    Returns two base64 PNGs: roc_comparison & pr_comparison.
+    Query param `ids` is a comma-separated list of 2–4 benchmark IDs.
+    Returns two base64 PNGs: `roc_comparison` & `pr_comparison`.
     """
     ids_list = [i.strip() for i in ids.split(",") if i.strip()]
-    if not 1 <= len(ids_list) <= 3:
-        raise HTTPException(400, "Please provide between 1 and 3 benchmark IDs")
+    if not (2 <= len(ids_list) <= 4):
+        raise HTTPException(
+            status_code=400,
+            detail="Please provide between 2 and 4 benchmark IDs"
+        )
+
     try:
         imgs = plotter.generate_comparison_plots(ids_list)
     except KeyError as e:
-        raise HTTPException(404, str(e))
+        raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
-        raise HTTPException(500, f"Comparison plot failed: {e}")
-    return imgs
+        raise HTTPException(status_code=500, detail=f"Comparison plot failed: {e}")
+
+    return {
+        "roc_comparison": imgs["roc_comparison"],
+        "pr_comparison":  imgs["pr_comparison"],
+    }

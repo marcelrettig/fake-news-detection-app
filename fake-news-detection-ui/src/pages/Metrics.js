@@ -270,24 +270,6 @@ const Metrics = () => {
                 marks
               />
             </Box>
-
-            {/* PR Curve image */}
-            <Box mt={2} mb={4}>
-              <Typography variant="subtitle1">
-                PR AUC: {(prAuc * 100).toFixed(2)}%
-              </Typography>
-              {loadingPlots ? (
-                <CircularProgress />
-              ) : plotError ? (
-                <Typography color="error">Failed to load PR curve.</Typography>
-              ) : (
-                <img
-                  src={`data:image/png;base64,${plotImages.pr_auc_curve}`}
-                  alt="Precision–Recall Curve"
-                  style={{ maxWidth: '100%' }}
-                />
-              )}
-            </Box>
           </>
         )}
 

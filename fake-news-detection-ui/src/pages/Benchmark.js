@@ -386,7 +386,7 @@ export default function Benchmark() {
                 >
                   <MenuItem value="gpt-4o">GPT-4o</MenuItem>
                   <MenuItem value="gpt-4">GPT-4</MenuItem>
-                  <MenuItem value="gpt-o4-mini">GPT-o4 Mini</MenuItem>
+                  <MenuItem value="gpt-4.1">GPT-4.1</MenuItem>
                 </Select>
               </FormControl>
             </Box>
