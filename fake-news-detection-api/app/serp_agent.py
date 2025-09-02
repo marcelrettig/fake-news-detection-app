@@ -21,7 +21,6 @@ class SerpAgent:
         self.summary_model  = model
 
     def search_news(self, query: str, post: str,) -> str:
-
         research_llm = ChatOpenAI(
             model_name=self.research_model,
             temperature=0.3,

@@ -1,10 +1,24 @@
 from app.llm_manager import LLMManager
 from app.serp_agent import SerpAgent
+import os
 
 class ClassificationService:
     def __init__(self, llm: LLMManager, serp: SerpAgent):
         self.llm = llm
         self.serp = serp
+        self.apply_env_models()
+
+
+    def apply_env_models(self) -> None:
+        # Read the four model names from .env (with sensible fallbacks)
+        self.llm.extract_model  = os.getenv("LLM_EXTRACT_MODEL",  "gpt-4o")
+        self.llm.classify_model = os.getenv("LLM_CLASSIFY_MODEL", "gpt-4o")
+        # If your LLMManager has setters, feel free to call them here instead:
+        # self.llm.set_models(extract=self.llm.extract_model, classify=self.llm.classify_model)
+
+        # Keep Serp/Crew models in sync, used only when use_external_info=True
+        self.serp.research_model = os.getenv("LLM_RESEARCH_MODEL", "gpt-4o")
+        self.serp.summary_model  = os.getenv("LLM_SUMMARY_MODEL",  "gpt-4o")
 
     def extract_query(self, text: str) -> str:
         if not text.strip():
